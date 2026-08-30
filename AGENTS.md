@@ -17,6 +17,7 @@ Read these documents before changing architecture:
 - `docs/ARCHITECTURE.md`
 - `docs/DEVELOPMENT.md`
 - `docs/TASK_TEMPLATE.md`
+- `docs/REPORTING.md`
 
 ---
 
@@ -148,6 +149,7 @@ Roles:
 - Developer
 - Tester
 - Reviewer
+- Delivery Reporter
 - Escalation Architect
 
 Agents should communicate primarily through:
@@ -175,13 +177,6 @@ Before implementing a task:
 6. Add or update tests.
 7. Run the required validation commands.
 8. Report unresolved conflicts instead of guessing.
-9. After a task reaches DONE, commit and push its implementation, tests,
-   documentation, task artifact, validation result and reviewer status to the
-   configured GitHub repository.
-
-If GitHub synchronization fails, keep the local commit intact and report the
-failure explicitly. Never claim that a task was uploaded until the remote
-branch has been verified.
 
 ---
 
@@ -194,7 +189,6 @@ A development task is not complete until:
 - public schemas remain typed;
 - documentation is updated when behavior changed;
 - reviewer issues rated Blocker or Major are resolved.
-- the completed task artifact and verified code are synchronized to GitHub.
 
 ---
 
@@ -250,3 +244,7 @@ Avoid:
 - opaque utility layers;
 - unnecessary abstractions;
 - implicit business rules hidden in code.
+
+## 10. GitHub reporting
+
+GitHub Issues and Pull Requests are the development control plane. Read `docs/REPORTING.md`. Coding-session transcripts are not authoritative project state. The Delivery Reporter normalizes task state and validation evidence for PM consumption.

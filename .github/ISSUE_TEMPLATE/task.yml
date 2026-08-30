@@ -1,0 +1,97 @@
+name: OpsMind development task
+description: Create an implementation, test, documentation, or architecture task.
+title: "[TASK] "
+body:
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      options:
+        - LOW
+        - MEDIUM
+        - HIGH
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One concrete outcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What capability this enables.
+    validations:
+      required: true
+
+  - type: textarea
+    id: in_scope
+    attributes:
+      label: In scope
+      placeholder: |
+        - item
+        - item
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      placeholder: |
+        - item
+        - item
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Task IDs / issues that must complete first.
+
+  - type: textarea
+    id: references
+    attributes:
+      label: Required references
+      placeholder: |
+        - AGENTS.md
+        - docs/ARCHITECTURE.md §...
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] criterion
+        - [ ] criterion
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test / eval requirements
+      placeholder: |
+        - happy path
+        - failure path
+        - Golden Case ...
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Architecture constraints
+      placeholder: |
+        - model-driven business decision
+        - use Model Gateway
+        - do not change graph topology
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        The Delivery Reporter Agent will maintain current stage, PR, validation,
+        blockers, and PM action after work begins.
