@@ -146,6 +146,27 @@ class AgentAction(StrEnum):
     END_CONVERSATION = "END_CONVERSATION"
 
 
+class TaskStatus(StrEnum):
+    """Lifecycle status of the current task."""
+
+    ACTIVE = "ACTIVE"
+    WAITING_USER = "WAITING_USER"
+    INVESTIGATING = "INVESTIGATING"
+    READY_TO_REPLY = "READY_TO_REPLY"
+    TRANSFERRED = "TRANSFERRED"
+    RESOLVED = "RESOLVED"
+    CLOSED = "CLOSED"
+
+
+class ResolutionStatus(StrEnum):
+    """Resolution status of the current conversation problem."""
+
+    UNKNOWN = "UNKNOWN"
+    UNRESOLVED = "UNRESOLVED"
+    PARTIALLY_RESOLVED = "PARTIALLY_RESOLVED"
+    RESOLVED = "RESOLVED"
+
+
 class CapabilityMode(StrEnum):
     """Runtime capability boundary enforced independently of model output."""
 
@@ -179,7 +200,7 @@ class ConversationState(StateModel):
     original_query: str | None = None
     current_query: str | None = None
     summary: str | None = None
-    previous_resolution_status: str | None = None
+    previous_resolution_status: ResolutionStatus | None = None
 
 
 class UnderstandingState(StateModel):
@@ -197,7 +218,7 @@ class TaskState(StateModel):
     """Compact description of the current task and its progress."""
 
     objective: str | None = None
-    status: str | None = None
+    status: TaskStatus | None = None
     constraints: list[str] = Field(default_factory=list)
 
 
@@ -280,9 +301,10 @@ class EvidenceState(StateModel):
 
 
 class DecisionState(StateModel):
-    """Most recent model-selected action and compact rationale."""
+    """Most recent model-selected action, goal, and compact rationale."""
 
     action: AgentAction | None = None
+    goal: str | None = None
     rationale: str | None = None
 
 
