@@ -11,6 +11,8 @@ safety boundaries.
 - Phase 1 Agent Kernel: in progress
 - TASK-001 repository foundation and typed state: complete
 - Runtime capability: `READ_ONLY`
+- GitHub Issues and Pull Requests: development control plane
+- Delivery Reporter: required at meaningful task transitions
 
 The current implementation provides the validated V0.1 `OpsAgentState`
 contract. Model Gateway, LangGraph execution, enterprise tools, and Golden Case
@@ -34,6 +36,8 @@ Architecture and development rules live in:
 - `docs/ARCHITECTURE.md`
 - `docs/DEVELOPMENT.md`
 - `docs/PHASE1_PLAN.md`
+- `docs/REPORTING.md`
+- `docs/roles/DELIVERY_REPORTER.md`
 
 Completed task artifacts, including tester and reviewer results, are stored in
 `tasks/done/`.

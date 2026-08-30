@@ -111,7 +111,31 @@ Only BLOCKER and MAJOR findings block completion.
 
 ---
 
-## 1.5 Escalation Architect
+## 1.5 Delivery Reporter
+
+Recommended profile:
+- Luna Max / efficient coding-reasoning model.
+
+Responsibilities:
+- normalize task state after meaningful stage transitions;
+- summarize implementation, validation, review and blockers;
+- update GitHub Issue / PR reporting surfaces;
+- surface only information the PM needs to act;
+- never modify product code;
+- never replace independent testing or review.
+
+Run the Reporter:
+- after Developer completion;
+- after Tester completion;
+- after Reviewer completion;
+- immediately on BLOCKED / ESCALATION;
+- once at completion for LOW-risk tasks unless blocked.
+
+Read `docs/REPORTING.md` and `docs/roles/DELIVERY_REPORTER.md`.
+
+---
+
+## 1.6 Escalation Architect
 
 Recommended profile:
 - strongest reasoning model / advanced Sol-class model.
@@ -175,9 +199,15 @@ PM Task
   ↓
 Developer
   ↓
+Delivery Reporter
+  ↓
 Tester
   ↓
+Delivery Reporter
+  ↓
 Reviewer
+  ↓
+Delivery Reporter
   ↓
 Done / Changes
 ```
@@ -204,9 +234,15 @@ PM / Architect
   ↓
 Developer
   ↓
+Delivery Reporter
+  ↓
 Tester
   ↓
+Delivery Reporter
+  ↓
 Reviewer
+  ↓
+Delivery Reporter
   ↓
 PM Architecture Gate
   ↓
@@ -489,18 +525,17 @@ Proceed only after earlier gates are stable.
 
 ---
 
-# 13. GitHub synchronization
+# 13. GitHub as control plane
 
-After every completed development task:
+Task state must be legible from GitHub without opening coding-agent sessions.
 
-1. record the final Developer, Tester and Reviewer status in the task artifact;
-2. run the task's validation commands against the exact source to be committed;
-3. commit the implementation, tests, documentation and completed task artifact;
-4. push the commit to the configured GitHub repository;
-5. verify that the remote branch points to the local commit;
-6. include the commit identifier and remote synchronization result in the
-   user-facing completion report.
+Canonical surfaces:
+- Issue = task intent and current state;
+- PR = implementation handoff;
+- Actions = machine validation;
+- PR review = independent quality verdict;
+- ADR/docs = durable architecture decisions.
 
-Do not commit secrets, local environments, caches or raw enterprise artifacts.
-If synchronization is unavailable, preserve the local commit and report the
-remote failure rather than representing the task as uploaded.
+The Delivery Reporter is responsible for normalizing these surfaces.
+
+See `docs/REPORTING.md`.
