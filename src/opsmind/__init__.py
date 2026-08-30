@@ -14,10 +14,12 @@ from opsmind.state import (
     OpsAgentState,
     PrimaryIntent,
     RequestType,
+    ResolutionStatus,
     ResponseState,
     RiskSignal,
     SafetyState,
     TaskState,
+    TaskStatus,
     ToolState,
     UnderstandingState,
 )
@@ -35,12 +37,13 @@ __all__ = [
     "LoopState",
     "OpsAgentState",
     "PrimaryIntent",
+    "ResolutionStatus",
     "RequestType",
     "ResponseState",
     "RiskSignal",
     "SafetyState",
     "TaskState",
+    "TaskStatus",
     "ToolState",
     "UnderstandingState",
 ]
-

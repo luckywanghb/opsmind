@@ -13,7 +13,9 @@ from opsmind import (
     OpsAgentState,
     PrimaryIntent,
     RequestType,
+    ResolutionStatus,
     RiskSignal,
+    TaskStatus,
 )
 
 
@@ -71,6 +73,21 @@ def test_enums_match_the_architecture_taxonomies() -> None:
         "END_CONVERSATION",
     }
     assert {item.value for item in CapabilityMode} == {"READ_ONLY"}
+    assert {item.value for item in TaskStatus} == {
+        "ACTIVE",
+        "WAITING_USER",
+        "INVESTIGATING",
+        "READY_TO_REPLY",
+        "TRANSFERRED",
+        "RESOLVED",
+        "CLOSED",
+    }
+    assert {item.value for item in ResolutionStatus} == {
+        "UNKNOWN",
+        "UNRESOLVED",
+        "PARTIALLY_RESOLVED",
+        "RESOLVED",
+    }
 
 
 def test_full_representative_state() -> None:
@@ -88,7 +105,7 @@ def test_full_representative_state() -> None:
             "original_query": "The plant system returns HTTP 500.",
             "current_query": "Is the whole site affected?",
             "summary": "The user cannot open the manufacturing system.",
-            "previous_resolution_status": "UNRESOLVED",
+            "previous_resolution_status": ResolutionStatus.UNRESOLVED,
         },
         understanding={
             "primary_intent": PrimaryIntent.SYSTEM_OPERATION,
@@ -100,7 +117,7 @@ def test_full_representative_state() -> None:
         },
         task={
             "objective": "Determine the outage scope.",
-            "status": "IN_PROGRESS",
+            "status": TaskStatus.INVESTIGATING,
             "constraints": ["read-only"],
         },
         loop={
@@ -130,6 +147,7 @@ def test_full_representative_state() -> None:
         },
         decision={
             "action": AgentAction.ASK_USER,
+            "goal": "Confirm whether the outage affects other users.",
             "rationale": "The current impact scope is unresolved.",
         },
         tool={
@@ -147,6 +165,12 @@ def test_full_representative_state() -> None:
 
     assert state.understanding.primary_intent is PrimaryIntent.SYSTEM_OPERATION
     assert state.decision.action is AgentAction.ASK_USER
+    assert state.decision.goal == "Confirm whether the outage affects other users."
+    assert state.task.status is TaskStatus.INVESTIGATING
+    assert (
+        state.conversation.previous_resolution_status
+        is ResolutionStatus.UNRESOLVED
+    )
     assert state.evidence.items[0].timestamp == observed_at
 
 
@@ -154,6 +178,11 @@ def test_full_representative_state() -> None:
     ("payload", "location"),
     [
         ({"understanding": {"primary_intent": "NOT_AN_INTENT"}}, "primary_intent"),
+        ({"task": {"status": "IN_PROGRESS"}}, "status"),
+        (
+            {"conversation": {"previous_resolution_status": "NOT_RESOLVED"}},
+            "previous_resolution_status",
+        ),
         ({"unexpected": True}, "unexpected"),
         ({"facts": {"raw_result": "large payload"}}, "raw_result"),
         (
@@ -299,7 +328,14 @@ def test_json_serialization_round_trip_preserves_typed_state() -> None:
                 }
             ]
         },
-        decision={"action": AgentAction.REPLY},
+        conversation={
+            "previous_resolution_status": ResolutionStatus.PARTIALLY_RESOLVED,
+        },
+        task={"status": TaskStatus.READY_TO_REPLY},
+        decision={
+            "action": AgentAction.REPLY,
+            "goal": "Provide the confirmed permission status.",
+        },
     )
 
     serialized = state.model_dump_json()
@@ -307,6 +343,11 @@ def test_json_serialization_round_trip_preserves_typed_state() -> None:
 
     assert restored == state
     assert restored.evidence.items[0].timestamp == observed_at
+    assert restored.conversation.previous_resolution_status is (
+        ResolutionStatus.PARTIALLY_RESOLVED
+    )
+    assert restored.task.status is TaskStatus.READY_TO_REPLY
+    assert restored.decision.goal == "Provide the confirmed permission status."
     assert json.loads(serialized)["safety"]["capability"] == "READ_ONLY"
 
 
