@@ -25,6 +25,7 @@ from opsmind.models import (
     ModelStructuredOutputError,
     ModelTask,
     ModelUsage,
+    StructuredModelResponse,
 )
 
 T = TypeVar("T")
@@ -59,7 +60,7 @@ def make_gateway(
         profile: ModelRoute(
             profile=profile,
             provider="mock",
-            model=f"mock-{profile.value}",
+            model=f"mock-{profile.name.lower()}",
         )
     }
     return ModelGateway(
@@ -179,6 +180,13 @@ def test_token_usage_rejects_negative_and_non_finite_values(
         ModelUsage(**{field: value})
 
 
+@pytest.mark.parametrize("field", ["input_tokens", "output_tokens", "total_tokens"])
+@pytest.mark.parametrize("value", [True, False])
+def test_token_usage_rejects_boolean_values(field: str, value: bool) -> None:
+    with pytest.raises(ValidationError):
+        ModelUsage(**{field: value})
+
+
 @pytest.mark.parametrize("latency_ms", [-1.0, math.nan, math.inf, -math.inf])
 def test_latency_rejects_negative_and_non_finite_values(latency_ms: float) -> None:
     with pytest.raises(ValidationError):
@@ -258,8 +266,9 @@ def test_structured_output_honors_a_permissive_caller_schema() -> None:
         make_gateway(provider).invoke_structured(make_request(), PermissiveOutput)
     )
 
-    assert result.answer == "ok"
-    assert result.model_extra is None
+    assert isinstance(result, StructuredModelResponse)
+    assert result.parsed.answer == "ok"
+    assert result.parsed.model_extra is None
 
 
 def test_structured_output_honors_an_allow_extra_caller_schema() -> None:
@@ -276,8 +285,9 @@ def test_structured_output_honors_an_allow_extra_caller_schema() -> None:
         make_gateway(provider).invoke_structured(make_request(), AllowExtraOutput)
     )
 
-    assert result.answer == "ok"
-    assert result.model_extra == {"provider_field": "retained"}
+    assert isinstance(result, StructuredModelResponse)
+    assert result.parsed.answer == "ok"
+    assert result.parsed.model_extra == {"provider_field": "retained"}
 
 
 def test_structured_output_honors_a_forbid_extra_caller_schema() -> None:
@@ -352,3 +362,16 @@ def test_concurrent_calls_keep_distinct_requests_and_history_snapshots() -> None
 
     requests[0].metadata["after_call_mutation"] = True
     assert "after_call_mutation" not in provider.history[0].request.metadata
+
+
+def test_history_access_returns_detached_records() -> None:
+    provider = MockModelProvider(responses=["reply"])
+    model_gateway = make_gateway(provider)
+
+    run_async(model_gateway.invoke(make_request(metadata={"mutable": True})))
+    history = provider.history
+    history[0].request.metadata["changed"] = True
+    history.clear()
+
+    assert provider.invocation_count == 1
+    assert "changed" not in provider.history[0].request.metadata

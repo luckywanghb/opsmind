@@ -6,7 +6,11 @@ from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
-from opsmind.models.contracts import ModelRequest, ModelResponse
+from opsmind.models.contracts import (
+    ModelRequest,
+    ModelResponse,
+    StructuredModelResponse,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -32,5 +36,5 @@ class ModelProvider(Protocol):
         response_model: type[T],
         *,
         model: str,
-    ) -> T:
-        """Generate and validate a response against ``response_model``."""
+    ) -> StructuredModelResponse[T]:
+        """Generate a validated model and preserve response metadata."""

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
@@ -17,9 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 class ModelProfile(StrEnum):
     """Logical model quality/cost profile selected by an Agent node."""
 
-    CHEAP = "cheap"
-    STRONG = "strong"
-    FALLBACK = "fallback"
+    CHEAP = "CHEAP"
+    STRONG = "STRONG"
+    FALLBACK = "FALLBACK"
 
 
 class ModelTask(StrEnum):
@@ -134,3 +134,19 @@ class ModelResponse(ModelContract):
     request_id: str | None = None
 
     _validate_provider = field_validator("provider", "model")(_validate_non_blank)
+
+
+StructuredT = TypeVar("StructuredT", bound=BaseModel)
+
+
+class StructuredModelResponse(ModelContract, Generic[StructuredT]):
+    """Validated structured output together with its provider response.
+
+    Structured model calls still expose the caller's validated Pydantic model
+    through ``parsed`` while retaining the response metadata needed for
+    tracing and cost evaluation.  The wrapper deliberately contains no
+    provider-specific fields.
+    """
+
+    parsed: StructuredT
+    response: ModelResponse

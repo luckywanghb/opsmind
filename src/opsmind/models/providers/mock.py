@@ -6,7 +6,7 @@ import json
 from collections import deque
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ from opsmind.models.contracts import (
     ModelRequest,
     ModelResponse,
     ModelTask,
+    StructuredModelResponse,
 )
 from opsmind.models.errors import ModelInvocationError
 
@@ -75,33 +76,52 @@ class MockModelProvider:
         if not isinstance(provider_name, str) or not provider_name.strip():
             raise ValueError("provider_name must not be blank")
         self.provider_name = provider_name
-        self._responses: deque[object] = deque(responses or ())
+        self._responses: deque[object] = deque(
+            responses if responses is not None else ()
+        )
         self._structured_responses: deque[object] | None = (
             deque(structured_responses)
             if structured_responses is not None
             else None
         )
-        self.history: list[MockInvocation] = []
+        self._history: list[MockInvocation] = []
+
+    def _history_snapshot(self) -> list[MockInvocation]:
+        """Return detached records so callers cannot mutate provider state."""
+
+        return [
+            MockInvocation(
+                request=invocation.request.model_copy(deep=True),
+                model=invocation.model,
+            )
+            for invocation in self._history
+        ]
 
     @property
     def invocations(self) -> list[MockInvocation]:
         """Alias for the invocation history used by tests."""
 
-        return self.history
+        return self._history_snapshot()
+
+    @property
+    def history(self) -> list[MockInvocation]:
+        """A detached snapshot of all recorded invocations."""
+
+        return self._history_snapshot()
 
     @property
     def calls(self) -> list[MockInvocation]:
         """Alias for the invocation history used by tests."""
 
-        return self.history
+        return self._history_snapshot()
 
     @property
     def invocation_count(self) -> int:
-        return len(self.history)
+        return len(self._history)
 
     @property
     def call_count(self) -> int:
-        return len(self.history)
+        return len(self._history)
 
     @property
     def remaining_responses(self) -> int:
@@ -122,6 +142,14 @@ class MockModelProvider:
 
         self._responses.append(response)
 
+    def enqueue(self, response: object) -> None:
+        """Append one response to the text/default queue.
+
+        This short alias keeps the queue API convenient for Agent-node tests.
+        """
+
+        self.enqueue_response(response)
+
     def enqueue_structured_response(self, response: object) -> None:
         """Append one response to the dedicated structured queue."""
 
@@ -129,8 +157,13 @@ class MockModelProvider:
             self._structured_responses = deque()
         self._structured_responses.append(response)
 
+    def enqueue_structured(self, response: object) -> None:
+        """Append one response to the dedicated structured queue."""
+
+        self.enqueue_structured_response(response)
+
     def _record(self, request: ModelRequest, model: str) -> None:
-        self.history.append(
+        self._history.append(
             MockInvocation(request=request.model_copy(deep=True), model=model)
         )
 
@@ -185,15 +218,30 @@ class MockModelProvider:
         response_model: type[T],
         *,
         model: str,
-    ) -> T:
-        """Validate the next predefined payload with ``response_model``."""
+    ) -> StructuredModelResponse[T]:
+        """Validate the next predefined payload and preserve its metadata."""
 
         self._record(request, model)
         response = self._next_response(structured=True)
         self._raise_if_exception(response)
 
+        metadata = ModelResponse(
+            content="",
+            provider=self.provider_name,
+            model=model,
+        )
         payload: object = response
-        if isinstance(response, ModelResponse):
+        if isinstance(response, StructuredModelResponse):
+            metadata = ModelResponse.model_validate(response.response)
+            payload = response.parsed
+        elif isinstance(response, Mapping) and {
+            "parsed",
+            "response",
+        }.issubset(response):
+            metadata = ModelResponse.model_validate(response["response"])
+            payload = response["parsed"]
+        elif isinstance(response, ModelResponse):
+            metadata = ModelResponse.model_validate(response)
             try:
                 payload = json.loads(response.content)
             except json.JSONDecodeError:
@@ -204,4 +252,11 @@ class MockModelProvider:
             except json.JSONDecodeError:
                 payload = response
 
-        return response_model.model_validate(payload)
+        parsed = response_model.model_validate(payload)
+        return cast(
+            StructuredModelResponse[T],
+            StructuredModelResponse(
+                parsed=parsed,
+                response=metadata,
+            )
+        )

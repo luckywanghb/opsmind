@@ -9,6 +9,7 @@ from opsmind.models.contracts import (
     ModelRoute,
     ModelTask,
     ModelUsage,
+    StructuredModelResponse,
 )
 from opsmind.models.errors import (
     ModelGatewayError,
@@ -48,4 +49,5 @@ __all__ = [
     "ModelStructuredOutputError",
     "ModelTask",
     "ModelUsage",
+    "StructuredModelResponse",
 ]

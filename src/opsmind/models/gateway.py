@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
-from typing import TypeAlias, TypeVar
+from typing import TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -12,6 +13,7 @@ from opsmind.models.contracts import (
     ModelRequest,
     ModelResponse,
     ModelRoute,
+    StructuredModelResponse,
 )
 from opsmind.models.errors import (
     ModelGatewayError,
@@ -34,17 +36,19 @@ RouteInput: TypeAlias = RouteMapping | Iterable[ModelRoute | Mapping[str, object
 
 
 def _coerce_profile(value: ModelProfile | str) -> ModelProfile:
-    """Accept enum values and enum member names in configuration mappings."""
+    """Accept enum values and case-insensitive member names in configuration."""
 
     if isinstance(value, ModelProfile):
         return value
     try:
         return ModelProfile(value)
-    except ValueError:
-        try:
-            return ModelProfile[value]
-        except KeyError as exc:
-            raise ValueError(f"unknown model profile {value!r}") from exc
+    except (TypeError, ValueError):
+        if isinstance(value, str):
+            try:
+                return ModelProfile[value.upper()]
+            except KeyError:
+                pass
+        raise ValueError(f"unknown model profile {value!r}") from None
 
 
 class ModelGateway:
@@ -108,6 +112,16 @@ class ModelGateway:
     def _parse_route(
         route: ModelRoute | Mapping[str, object],
     ) -> ModelRoute:
+        if isinstance(route, Mapping):
+            route = dict(route)
+            profile = route.get("profile")
+            if isinstance(profile, str):
+                try:
+                    route["profile"] = _coerce_profile(profile)
+                except ValueError:
+                    # Let Pydantic produce the typed validation cause for an
+                    # unknown profile value.
+                    pass
         try:
             return ModelRoute.model_validate(route)
         except ValidationError as exc:
@@ -135,10 +149,14 @@ class ModelGateway:
             raise ModelProviderAlreadyRegisteredError(name)
         self._providers[name] = provider
 
-    def register_route(self, route: ModelRoute) -> None:
+    def register_route(
+        self,
+        route: ModelRoute | Mapping[str, object],
+    ) -> None:
         """Add one route after gateway construction."""
 
-        self._add_route(route.profile, ModelRoute.model_validate(route))
+        parsed_route = self._parse_route(route)
+        self._add_route(parsed_route.profile, parsed_route)
 
     def _route_for(self, request: ModelRequest) -> ModelRoute:
         route = self._routes.get(request.profile)
@@ -194,8 +212,8 @@ class ModelGateway:
         self,
         request: ModelRequest,
         response_model: type[T],
-    ) -> T:
-        """Invoke and validate structured output against ``response_model``."""
+    ) -> StructuredModelResponse[T]:
+        """Invoke structured output and retain its response metadata."""
 
         if not isinstance(response_model, type) or not issubclass(
             response_model, BaseModel
@@ -230,8 +248,70 @@ class ModelGateway:
                 f"provider {route.provider!r}, model {route.model!r}"
             ) from exc
 
+        return self._normalize_structured_result(
+            result,
+            response_model=response_model,
+            provider=route.provider,
+            model=route.model,
+        )
+
+    async def invoke_structured_value(
+        self,
+        request: ModelRequest,
+        response_model: type[T],
+    ) -> T:
+        """Return only the parsed model for callers that do not need metadata."""
+
+        return (await self.invoke_structured(request, response_model)).parsed
+
+    @staticmethod
+    def _normalize_structured_result(
+        result: object,
+        *,
+        response_model: type[T],
+        provider: str,
+        model: str,
+    ) -> StructuredModelResponse[T]:
+        """Normalize provider output while validating both payload and metadata."""
+
         try:
-            return response_model.model_validate(result)
+            if isinstance(result, StructuredModelResponse):
+                parsed = response_model.model_validate(result.parsed)
+                metadata = ModelResponse.model_validate(result.response)
+                return cast(
+                    StructuredModelResponse[T],
+                    StructuredModelResponse(parsed=parsed, response=metadata),
+                )
+
+            metadata = ModelResponse(
+                content="",
+                provider=provider,
+                model=model,
+            )
+            payload = result
+            if isinstance(result, Mapping) and {
+                "parsed",
+                "response",
+            }.issubset(result):
+                metadata = ModelResponse.model_validate(result["response"])
+                payload = result["parsed"]
+            elif isinstance(result, ModelResponse):
+                metadata = ModelResponse.model_validate(result)
+                try:
+                    payload = json.loads(result.content)
+                except json.JSONDecodeError:
+                    payload = result.content
+            elif isinstance(result, str):
+                try:
+                    payload = json.loads(result)
+                except json.JSONDecodeError:
+                    payload = result
+
+            parsed = response_model.model_validate(payload)
+            return cast(
+                StructuredModelResponse[T],
+                StructuredModelResponse(parsed=parsed, response=metadata),
+            )
         except (ValidationError, TypeError, ValueError) as exc:
             raise ModelStructuredOutputError(
                 "model provider returned structured output that does not "

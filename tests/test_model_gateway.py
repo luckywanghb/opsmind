@@ -28,6 +28,7 @@ from opsmind.models import (
     ModelStructuredOutputError,
     ModelTask,
     ModelUsage,
+    StructuredModelResponse,
 )
 
 T = TypeVar("T")
@@ -61,7 +62,7 @@ def route(
     return ModelRoute(
         profile=profile,
         provider=provider,
-        model=model or f"mock-{profile.value}",
+        model=model or f"mock-{profile.name.lower()}",
     )
 
 
@@ -78,9 +79,9 @@ def gateway(
 
 def test_profiles_and_tasks_are_provider_neutral() -> None:
     assert {profile.value for profile in ModelProfile} == {
-        "cheap",
-        "strong",
-        "fallback",
+        "CHEAP",
+        "STRONG",
+        "FALLBACK",
     }
     assert {task.value for task in ModelTask} == {
         "REQUEST_UNDERSTANDING",
@@ -97,6 +98,12 @@ def test_profiles_and_tasks_are_provider_neutral() -> None:
         "ASSISTANT",
         "TOOL",
     }
+
+
+def test_structured_response_contract_is_publicly_exported() -> None:
+    from opsmind import StructuredModelResponse as RootStructuredModelResponse
+
+    assert RootStructuredModelResponse is StructuredModelResponse
 
 
 def test_request_requires_at_least_one_message_and_json_metadata() -> None:
@@ -180,9 +187,12 @@ def test_structured_output_is_validated_to_a_pydantic_instance() -> None:
 
     result = run_async(model_gateway.invoke_structured(request(), ExampleOutput))
 
-    assert isinstance(result, ExampleOutput)
-    assert result.answer == "ready"
-    assert result.confidence == 0.95
+    assert isinstance(result, StructuredModelResponse)
+    assert isinstance(result.parsed, ExampleOutput)
+    assert result.parsed.answer == "ready"
+    assert result.parsed.confidence == 0.95
+    assert result.response.provider == "mock"
+    assert result.response.model == "mock-cheap"
 
 
 def test_invalid_structured_output_has_a_specific_error() -> None:
@@ -203,6 +213,58 @@ def test_invalid_structured_output_has_a_specific_error() -> None:
         run_async(model_gateway.invoke_structured(request(), StrictOutput))
 
     assert "StrictOutput" in str(error.value)
+
+
+def test_structured_output_preserves_provider_response_metadata() -> None:
+    class ExampleOutput(BaseModel):
+        answer: str
+
+    provider = MockModelProvider(
+        structured_responses=[
+            ModelResponse(
+                content='{"answer":"ready"}',
+                provider="mock",
+                model="mock-cheap",
+                finish_reason="stop",
+                usage=ModelUsage(
+                    input_tokens=4,
+                    output_tokens=2,
+                    total_tokens=6,
+                ),
+                latency_ms=12.5,
+                request_id="request-1",
+            )
+        ]
+    )
+    model_gateway = gateway(provider)
+    result = run_async(model_gateway.invoke_structured(request(), ExampleOutput))
+
+    assert result.parsed.answer == "ready"
+    assert result.response.provider == "mock"
+    assert result.response.model == "mock-cheap"
+    assert result.response.finish_reason == "stop"
+    assert result.response.usage == ModelUsage(
+        input_tokens=4,
+        output_tokens=2,
+        total_tokens=6,
+    )
+    assert result.response.latency_ms == 12.5
+    assert result.response.request_id == "request-1"
+
+
+def test_structured_value_convenience_returns_only_the_validated_model() -> None:
+    class ExampleOutput(BaseModel):
+        answer: str
+
+    provider = MockModelProvider(structured_responses=[{"answer": "ready"}])
+    model_gateway = gateway(provider)
+
+    result = run_async(
+        model_gateway.invoke_structured_value(request(), ExampleOutput)
+    )
+
+    assert isinstance(result, ExampleOutput)
+    assert result.answer == "ready"
 
 
 def test_mock_history_records_request_profile_task_messages_and_model() -> None:
@@ -267,3 +329,10 @@ def test_route_configuration_accepts_string_profile_keys() -> None:
     )
 
     assert run_async(model_gateway.invoke(request())).content == "ok"
+
+
+def test_mock_enqueue_alias_supports_queued_text_responses() -> None:
+    provider = MockModelProvider()
+    provider.enqueue("ok")
+
+    assert run_async(gateway(provider).invoke(request())).content == "ok"

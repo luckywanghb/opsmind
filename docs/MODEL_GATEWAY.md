@@ -8,9 +8,12 @@ do not instantiate or import a concrete provider client.
 
 `ModelProfile` identifies a logical cost/quality tier:
 
-- `ModelProfile.CHEAP` (`cheap`)
-- `ModelProfile.STRONG` (`strong`)
-- `ModelProfile.FALLBACK` (`fallback`)
+- `ModelProfile.CHEAP` (`CHEAP`)
+- `ModelProfile.STRONG` (`STRONG`)
+- `ModelProfile.FALLBACK` (`FALLBACK`)
+
+Configuration mappings may use the lowercase logical names (`cheap`,
+`strong`, `fallback`) as keys; they are normalized to the enum members.
 
 `ModelTask` identifies why the call is being made. It is observability and
 evaluation metadata, not a business router. `ModelMessage` contains a
@@ -40,8 +43,10 @@ gateway = ModelGateway(routes=routes, providers={"mock": provider})
 ```
 
 `ModelProvider` is an async protocol with `invoke` and
-`invoke_structured` methods. A provider adapter owns all SDK-specific details;
-the gateway only performs profile routing, provider lookup, invocation, and
+`invoke_structured` methods. The structured method returns a
+`StructuredModelResponse[T]`, so an adapter can supply output metadata without
+leaking its SDK schema. A provider adapter owns all SDK-specific details; the
+gateway only performs profile routing, provider lookup, invocation, and
 response validation. Provider registration names cannot be silently
 overwritten.
 
@@ -57,12 +62,17 @@ request = ModelRequest(
     metadata={"thread_id": "thread-123", "node": "understand_request"},
 )
 text_response = await gateway.invoke(request)
-understanding = await gateway.invoke_structured(request, UnderstandingSchema)
+structured_response = await gateway.invoke_structured(request, UnderstandingSchema)
+understanding = structured_response.parsed
 ```
 
-`invoke_structured` accepts a Pydantic `BaseModel` subclass and returns an
-instance validated against that schema. Invalid payloads are never returned
-as an unchecked dictionary; they raise `ModelStructuredOutputError`.
+`invoke_structured` accepts a Pydantic `BaseModel` subclass and returns a
+`StructuredModelResponse[T]`. Its `parsed` field is the caller's Pydantic
+model instance, and its `response` field retains provider/model, usage,
+latency, finish reason, and request ID metadata. Invalid payloads are never
+returned as an unchecked dictionary; they raise
+`ModelStructuredOutputError`. Callers that do not need metadata can use
+`invoke_structured_value` to receive only the validated model instance.
 
 ## Error boundary
 
@@ -84,7 +94,8 @@ All are subclasses of `ModelGatewayError`.
 text or structured responses from queues and records every request, selected
 model, profile, task, and message list in `history`/`invocations`. This lets
 future Agent-node tests assert profile routing without network calls or
-provider credentials.
+provider credentials. History access returns detached snapshots, so test code
+cannot mutate records held by the provider.
 
 ## Future concrete adapters
 
