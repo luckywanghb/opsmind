@@ -331,6 +331,21 @@ def test_route_configuration_accepts_string_profile_keys() -> None:
     assert run_async(model_gateway.invoke(request())).content == "ok"
 
 
+def test_routes_property_returns_detached_route_models() -> None:
+    provider = MockModelProvider(responses=["ok"])
+    model_gateway = gateway(provider)
+
+    exposed_routes = model_gateway.routes
+    exposed_routes[ModelProfile.CHEAP].model = "tampered-model"
+    exposed_routes[ModelProfile.CHEAP].provider = "tampered-provider"
+
+    response = run_async(model_gateway.invoke(request()))
+
+    assert response.model == "mock-cheap"
+    assert model_gateway.routes[ModelProfile.CHEAP].model == "mock-cheap"
+    assert model_gateway.routes[ModelProfile.CHEAP].provider == "mock"
+
+
 def test_mock_enqueue_alias_supports_queued_text_responses() -> None:
     provider = MockModelProvider()
     provider.enqueue("ok")

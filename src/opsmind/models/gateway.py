@@ -77,7 +77,10 @@ class ModelGateway:
     def routes(self) -> Mapping[ModelProfile, ModelRoute]:
         """A snapshot of configured routes."""
 
-        return dict(self._routes)
+        return {
+            profile: route.model_copy(deep=True)
+            for profile, route in self._routes.items()
+        }
 
     @property
     def providers(self) -> Mapping[str, ModelProvider]:
