@@ -2,7 +2,7 @@
 
 ## Status
 
-IN_PROGRESS
+DONE
 
 ## Risk
 
@@ -851,32 +851,32 @@ Structured Output怎么工作
 
 全部满足才可 DONE：
 
-* [ ] ModelProfile 已定义
-* [ ] ModelTask 已定义
-* [ ] ModelMessage 已定义
-* [ ] ModelRequest 已定义
-* [ ] ModelResponse / ModelUsage 已定义
-* [ ] ModelProvider abstraction 已建立
-* [ ] ModelRoute configuration 已建立
-* [ ] ModelGateway 已实现
-* [ ] text invocation 可运行
-* [ ] structured invocation 可运行
-* [ ] MockModelProvider 已实现
-* [ ] Mock invocation history 可检查
-* [ ] 明确 error hierarchy
-* [ ] API 为 async-first
-* [ ] 未接真实 DeepSeek/OpenAI API
-* [ ] 未实现 LangGraph
-* [ ] 未实现业务 Prompt
-* [ ] 未修改 Agent业务逻辑
-* [ ] 未削弱现有 State validation
-* [ ] Developer tests PASS
-* [ ] Independent Tester PASS
-* [ ] Reviewer APPROVE
-* [ ] Ruff PASS
-* [ ] mypy PASS
-* [ ] uv lock check PASS
-* [ ] Delivery Reporter 已更新 GitHub
+* [x] ModelProfile 已定义
+* [x] ModelTask 已定义
+* [x] ModelMessage 已定义
+* [x] ModelRequest 已定义
+* [x] ModelResponse / ModelUsage 已定义
+* [x] ModelProvider abstraction 已建立
+* [x] ModelRoute configuration 已建立
+* [x] ModelGateway 已实现
+* [x] text invocation 可运行
+* [x] structured invocation 可运行
+* [x] MockModelProvider 已实现
+* [x] Mock invocation history 可检查
+* [x] 明确 error hierarchy
+* [x] API 为 async-first
+* [x] 未接真实 DeepSeek/OpenAI API
+* [x] 未实现 LangGraph
+* [x] 未实现业务 Prompt
+* [x] 未修改 Agent业务逻辑
+* [x] 未削弱现有 State validation
+* [x] Developer tests PASS
+* [x] Independent Tester PASS
+* [x] Reviewer APPROVE
+* [x] Ruff PASS
+* [x] mypy PASS
+* [x] uv lock check PASS
+* [x] Delivery Reporter 已更新 GitHub
 
 ---
 
@@ -967,3 +967,100 @@ PM action
 ```
 
 不要粘贴完整测试日志。
+
+---
+
+# Delivery Reporter completion report
+
+## PM View
+
+- **Task:** `TASK-P1-002`
+- **Issue:** [#5](https://github.com/luckywanghb/opsmind/issues/5)
+- **PR:** [#6](https://github.com/luckywanghb/opsmind/pull/6)
+- **Commit:** implementation head `011caff8fdabf30844122428c1a2bf765f21d0e1`
+- **Branch:** `task/TASK-P1-002-model-gateway`
+- **Stage:** `DONE`
+- **Risk:** `MEDIUM`
+- **Responsible role:** `delivery_reporter`
+
+## Outcome
+
+- Established the provider-neutral async Model Gateway with typed contracts, profile routing, structured-output validation, and explicit error boundaries.
+- Added a queue-backed `MockModelProvider` with invocation history for deterministic Agent-node tests.
+- All acceptance criteria are satisfied; the artifact is now under `tasks/done/`.
+
+## Files changed
+
+- `src/opsmind/models/` and `src/opsmind/__init__.py`
+- `docs/MODEL_GATEWAY.md`
+- `tests/test_model_gateway.py` and `tests/test_model_gateway_tester_boundaries.py`
+- This reporting artifact only: `tasks/done/TASK-P1-002-model-gateway-contracts-and-provider-abstraction.md`
+
+## Gateway API
+
+- `ModelGateway.invoke(request) -> ModelResponse`
+- `ModelGateway.invoke_structured(request, response_model) -> T`
+- Profile routing is explicit through `ModelRoute`; no prompt, business, state, or LangGraph logic is in the gateway.
+
+## Provider API
+
+- Async `ModelProvider.invoke(request, *, model) -> ModelResponse`
+- Async `ModelProvider.invoke_structured(request, response_model, *, model) -> T`
+- `MockModelProvider` supports response queues, structured payload validation, history, and concurrency-safe snapshots.
+
+## Supported profiles
+
+`CHEAP`, `STRONG`, `FALLBACK` (logical profiles; no concrete provider/model names).
+
+## Validation evidence
+
+- **Unit tests:** 142 passed, 0 failed.
+- **Independent Tester:** PASS; 40 adversarial cases, with the prior MAJOR route-mapping typing issue remediated.
+- **Reviewer:** APPROVE; no BLOCKER/MAJOR/MINOR/NIT findings. Recorded as GitHub COMMENT review `5060330045` because same-account formal approval is rejected.
+- **Ruff:** PASS.
+- **mypy:** PASS for `src/` and Gateway implementation/test scope; two unrelated pre-existing diagnostics remain outside the configured task gate.
+- **uv lock check:** PASS.
+- **CI:** Not configured; no workflow runs exist.
+
+## Architecture impact
+
+`CROSS_MODULE` — realizes the existing Model Gateway boundary consumed by later model-driven nodes. No architecture change or ADR is required.
+
+## Deviations / blockers / PM action
+
+- **Deviations:** None.
+- **Blockers:** None.
+- **PM action:** `NONE`.
+
+## Structured JSON status
+
+```json
+{
+  "task_id": "TASK-P1-002",
+  "stage": "DONE",
+  "risk": "MEDIUM",
+  "issue": 5,
+  "pr": 6,
+  "commit_sha": "011caff8fdabf30844122428c1a2bf765f21d0e1",
+  "outcome": [
+    "Provider-neutral async Model Gateway implemented",
+    "Structured output and queue-backed MockModelProvider validated",
+    "All acceptance criteria satisfied"
+  ],
+  "validation": {
+    "unit": {"status": "pass", "passed": 142, "failed": 0},
+    "independent_tester": {"status": "pass", "cases": 40, "major_remediated": true},
+    "reviewer": {"decision": "APPROVE", "findings": 0, "github_review_comment_id": 5060330045},
+    "ruff": {"status": "pass"},
+    "mypy_src": {"status": "pass"},
+    "mypy_gateway_scope": {"status": "pass"},
+    "uv_lock": {"status": "pass"},
+    "ci": {"status": "not_configured"}
+  },
+  "architecture_impact": "CROSS_MODULE",
+  "deviations": [],
+  "blockers": [],
+  "review": {"decision": "APPROVE", "blocker_count": 0, "major_count": 0},
+  "pm_action": "NONE"
+}
+```
