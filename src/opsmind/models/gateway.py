@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import TypeVar
+from typing import TypeAlias, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -25,6 +25,12 @@ from opsmind.models.errors import (
 from opsmind.models.providers.base import ModelProvider
 
 T = TypeVar("T", bound=BaseModel)
+
+RouteMapping: TypeAlias = (
+    Mapping[ModelProfile, ModelRoute]
+    | Mapping[str, ModelRoute | Mapping[str, object]]
+)
+RouteInput: TypeAlias = RouteMapping | Iterable[ModelRoute | Mapping[str, object]]
 
 
 def _coerce_profile(value: ModelProfile | str) -> ModelProfile:
@@ -52,11 +58,7 @@ class ModelGateway:
 
     def __init__(
         self,
-        routes: (
-            Mapping[ModelProfile | str, ModelRoute | Mapping[str, object]]
-            | Iterable[ModelRoute | Mapping[str, object]]
-            | None
-        ) = None,
+        routes: RouteInput | None = None,
         providers: Mapping[str, ModelProvider] | None = None,
     ) -> None:
         self._routes: dict[ModelProfile, ModelRoute] = {}
@@ -81,10 +83,7 @@ class ModelGateway:
 
     def _load_routes(
         self,
-        routes: (
-            Mapping[ModelProfile | str, ModelRoute | Mapping[str, object]]
-            | Iterable[ModelRoute | Mapping[str, object]]
-        ),
+        routes: RouteInput,
     ) -> None:
         if isinstance(routes, Mapping):
             for key, route in routes.items():
