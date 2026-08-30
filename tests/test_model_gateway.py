@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Awaitable
-from typing import TypeVar
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -33,7 +33,7 @@ from opsmind.models import (
 T = TypeVar("T")
 
 
-def run_async(operation: Awaitable[T]) -> T:
+def run_async(operation: Coroutine[Any, Any, T]) -> T:
     """Run an async gateway operation without requiring an extra test plugin."""
 
     return asyncio.run(operation)
