@@ -2,7 +2,7 @@
 
 ## Status
 
-READY
+DONE
 
 ## Risk
 
@@ -534,22 +534,22 @@ DecisionState / TaskState / ConversationState 是未来多个 Agent Node 都会�
 
 全部满足后才可 DONE：
 
-* [ ] `DecisionState` 增加 `goal`
-* [ ] 增加 `TaskStatus`
-* [ ] 增加 `ResolutionStatus`
-* [ ] `TaskState.status` 使用 `TaskStatus`
-* [ ] `ConversationState.previous_resolution_status` 使用 `ResolutionStatus`
-* [ ] 公共 export 已更新
-* [ ] JSON round trip 正常
-* [ ] invalid Enum 测试正常
-* [ ] 原 State regression tests 全部通过
-* [ ] Ruff PASS
-* [ ] mypy PASS
-* [ ] lock check PASS
-* [ ] Tester PASS
-* [ ] Reviewer APPROVE
-* [ ] Delivery Reporter 更新 GitHub 状态
-* [ ] 没有实现任何 Model / Graph / Tool
+* [x] `DecisionState` 增加 `goal`
+* [x] 增加 `TaskStatus`
+* [x] 增加 `ResolutionStatus`
+* [x] `TaskState.status` 使用 `TaskStatus`
+* [x] `ConversationState.previous_resolution_status` 使用 `ResolutionStatus`
+* [x] 公共 export 已更新
+* [x] JSON round trip 正常
+* [x] invalid Enum 测试正常
+* [x] 原 State regression tests 全部通过
+* [x] Ruff PASS
+* [x] mypy PASS
+* [x] lock check PASS
+* [x] Tester PASS
+* [x] Reviewer APPROVE
+* [x] Delivery Reporter 更新 GitHub 状态
+* [x] 没有实现任何 Model / Graph / Tool
 
 ---
 
@@ -593,3 +593,49 @@ DECISION_REQUIRED
 5. 各自影响。
 
 等待 PM / Architect 决策。
+
+---
+
+# 11. Completion reports
+
+## Developer
+
+- Added `DecisionState.goal`.
+- Added and exported `TaskStatus` and `ResolutionStatus`.
+- Replaced the two untyped status strings with their corresponding enums.
+- Added Developer tests for enum values, invalid values and JSON round trip.
+- Validation: 70 tests passed; Ruff, mypy and lock check passed.
+
+## Tester
+
+```text
+PASS
+```
+
+- Added independent lifecycle, assignment, goal-type and Evidence regression
+  boundaries.
+- Final validation: 88 tests passed; Ruff, mypy and lock check passed.
+- Production defects found: none.
+
+## Reviewer
+
+```text
+APPROVE
+```
+
+- BLOCKER: none.
+- MAJOR: none.
+- MINOR: none.
+- NIT: `DecisionState.goal` has no enforced length limit. The task defines no
+  numeric threshold and `rationale` is likewise unconstrained, so this does not
+  block approval.
+
+## Delivery Reporter
+
+- GitHub Issue: `#3`
+- GitHub Pull Request: `#4`
+- Stage before merge: `READY_TO_MERGE`
+- Architecture impact: `CROSS_MODULE`
+- PM action: `NONE`
+- GitHub cannot formally approve a PR authored by the same account; PR review
+  `5060107327` records the independent Agent's APPROVE verdict.
