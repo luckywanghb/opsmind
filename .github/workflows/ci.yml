@@ -1,0 +1,101 @@
+name: OpsMind CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Python 3.11 validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync frozen development environment
+        id: sync
+        continue-on-error: true
+        run: uv sync --frozen --dev
+
+      - name: Run pytest
+        id: pytest
+        continue-on-error: true
+        run: uv run --frozen pytest
+
+      - name: Run Ruff
+        id: ruff
+        continue-on-error: true
+        run: uv run --frozen ruff check .
+
+      - name: Run mypy
+        id: mypy
+        continue-on-error: true
+        run: uv run --frozen mypy src
+
+      - name: Check uv lockfile
+        id: lock
+        continue-on-error: true
+        run: uv lock --check
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          SYNC_RESULT: ${{ steps.sync.outcome }}
+          PYTEST_RESULT: ${{ steps.pytest.outcome }}
+          RUFF_RESULT: ${{ steps.ruff.outcome }}
+          MYPY_RESULT: ${{ steps.mypy.outcome }}
+          LOCK_RESULT: ${{ steps.lock.outcome }}
+        run: |
+          result() {
+            if [[ "$1" == "success" ]]; then
+              echo "PASS"
+            else
+              echo "FAIL"
+            fi
+          }
+
+          {
+            echo "## OpsMind CI"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| sync | $(result "$SYNC_RESULT") |"
+            echo "| pytest | $(result "$PYTEST_RESULT") |"
+            echo "| ruff | $(result "$RUFF_RESULT") |"
+            echo "| mypy | $(result "$MYPY_RESULT") |"
+            echo "| lock | $(result "$LOCK_RESULT") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce validation results
+        if: always()
+        env:
+          SYNC_RESULT: ${{ steps.sync.outcome }}
+          PYTEST_RESULT: ${{ steps.pytest.outcome }}
+          RUFF_RESULT: ${{ steps.ruff.outcome }}
+          MYPY_RESULT: ${{ steps.mypy.outcome }}
+          LOCK_RESULT: ${{ steps.lock.outcome }}
+        run: |
+          [[ "$SYNC_RESULT" == "success" ]]
+          [[ "$PYTEST_RESULT" == "success" ]]
+          [[ "$RUFF_RESULT" == "success" ]]
+          [[ "$MYPY_RESULT" == "success" ]]
+          [[ "$LOCK_RESULT" == "success" ]]
