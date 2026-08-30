@@ -85,7 +85,7 @@ This task changes the repository delivery workflow only.
 - **Issue:** None in this local control-plane snapshot
 - **PR:** None in this local control-plane snapshot
 - **Branch:** `task/TASK-REPO-002-reporting-control-plane-v2`
-- **Latest commit:** `085cad7379caa0c783ef300b839f38cbc302406b`
+- **Implementation commit:** `6622e3049fcc827abc5172ae519fc582df99ec9c`
 - **Stage:** `DONE`
 - **Responsible role:** `delivery_reporter`
 - **Risk:** `LOW`
@@ -125,7 +125,7 @@ This task changes the repository delivery workflow only.
   "risk": "LOW",
   "issue": null,
   "pr": null,
-  "commit_sha": "085cad7379caa0c783ef300b839f38cbc302406b",
+  "commit_sha": "6622e3049fcc827abc5172ae519fc582df99ec9c",
   "outcome": [
     "Added the V2 reporting baseline, Delivery Reporter role guidance, and GitHub Issue/PR templates.",
     "Replaced ad-hoc push completion rules with the GitHub control-plane workflow.",
