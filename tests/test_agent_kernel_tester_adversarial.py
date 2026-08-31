@@ -72,6 +72,7 @@ def understanding_response(**overrides: object) -> dict[str, object]:
         "symptom": "工单长时间未处理",
         "entities": {"work_order_id": "WO20260001"},
         "risk_signal": "NONE",
+        "uncertainty": None,
     }
     response.update(overrides)
     return response

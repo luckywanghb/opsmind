@@ -24,10 +24,10 @@ class RequestUnderstandingOutput(StateModel):
 
     primary_intent: PrimaryIntent
     request_type: RequestType
-    symptom: str | None = None
-    entities: FiniteJsonObject = Field(default_factory=dict)
-    risk_signal: RiskSignal = RiskSignal.NONE
-    uncertainty: str | None = None
+    symptom: str | None
+    entities: FiniteJsonObject
+    risk_signal: RiskSignal
+    uncertainty: str | None
 
 
 class ActionDecisionOutput(StateModel):

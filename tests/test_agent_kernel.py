@@ -60,6 +60,7 @@ def understanding_response(**overrides: object) -> dict[str, object]:
         "symptom": "工单长时间未处理",
         "entities": {"work_order_id": "WO20260001"},
         "risk_signal": "NONE",
+        "uncertainty": None,
     }
     response.update(overrides)
     return response
@@ -252,6 +253,30 @@ def test_extra_understanding_field_is_rejected_at_structured_boundary() -> None:
 
     with pytest.raises(ModelStructuredOutputError):
         run_async(run_ops_agent(initial_state(), gateway(provider)))
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "primary_intent",
+        "request_type",
+        "symptom",
+        "entities",
+        "risk_signal",
+        "uncertainty",
+    ],
+)
+def test_missing_transient_understanding_field_is_rejected(
+    missing_field: str,
+) -> None:
+    response = understanding_response()
+    del response[missing_field]
+    provider = MockModelProvider(structured_responses=[response])
+
+    with pytest.raises(ModelStructuredOutputError):
+        run_async(run_ops_agent(initial_state(), gateway(provider)))
+
+    assert provider.invocation_count == 1
 
 
 def test_invalid_decision_output_does_not_write_decision_state() -> None:
