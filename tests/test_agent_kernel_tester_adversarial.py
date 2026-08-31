@@ -34,6 +34,7 @@ from opsmind import (
     OpsAgentState,
     PrimaryIntent,
     RequestUnderstandingOutput,
+    RiskSignal,
     StructuredModelResponse,
     build_understanding_context,
     decide_action,
@@ -340,6 +341,87 @@ def test_malformed_nested_understanding_payload_never_updates_input_state(
 
     assert provider.invocation_count == 1
     assert state == before
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "primary_intent",
+        "request_type",
+        "symptom",
+        "entities",
+        "risk_signal",
+        "uncertainty",
+    ],
+)
+def test_each_required_understanding_field_fails_before_any_state_update(
+    missing_field: str,
+) -> None:
+    response = understanding_response()
+    del response[missing_field]
+    provider = MockModelProvider(structured_responses=[response])
+    state = OpsAgentState(
+        conversation={"current_query": "当前问题"},
+        understanding={
+            "primary_intent": "OTHER",
+            "request_type": "OTHER",
+            "symptom": "pre-existing",
+            "entities": {"pre-existing": True},
+            "risk_signal": "NONE",
+            "uncertainty": "pre-existing",
+        },
+    )
+    before = state.model_copy(deep=True)
+
+    with pytest.raises(ModelStructuredOutputError):
+        run_async(run_ops_agent(state, make_gateway(provider)))
+
+    assert provider.invocation_count == 1
+    assert state == before
+
+
+def test_explicit_null_nullable_fields_are_accepted_and_preserved() -> None:
+    provider = MockModelProvider(
+        structured_responses=[
+            understanding_response(symptom=None, uncertainty=None),
+            decision_response(),
+        ]
+    )
+    state = state_for()
+    before = state.model_copy(deep=True)
+
+    result = run_async(run_ops_agent(state, make_gateway(provider)))
+
+    assert result.understanding.symptom is None
+    assert result.understanding.uncertainty is None
+    assert result.understanding.risk_signal is RiskSignal.NONE
+    assert state == before
+    assert provider.invocation_count == 2
+
+
+def test_null_risk_signal_is_rejected_instead_of_synthesizing_none() -> None:
+    provider = MockModelProvider(
+        structured_responses=[understanding_response(risk_signal=None)]
+    )
+    state = state_for()
+    before = state.model_copy(deep=True)
+
+    with pytest.raises(ModelStructuredOutputError):
+        run_async(run_ops_agent(state, make_gateway(provider)))
+
+    assert provider.invocation_count == 1
+    assert state == before
+
+
+def test_persistent_understanding_defaults_remain_valid_before_model_output() -> None:
+    state = OpsAgentState()
+
+    assert state.understanding.primary_intent is None
+    assert state.understanding.request_type is None
+    assert state.understanding.symptom is None
+    assert state.understanding.entities == {}
+    assert state.understanding.risk_signal is RiskSignal.NONE
+    assert state.understanding.uncertainty is None
 
 
 @pytest.mark.parametrize(
