@@ -22,13 +22,18 @@ from opsmind.models.errors import (
 )
 from opsmind.models.gateway import ModelGateway
 from opsmind.models.providers import (
+    DeepSeekProvider,
     MockInvocation,
     MockModelProvider,
     MockResponseQueueExhaustedError,
     ModelProvider,
 )
+from opsmind.models.runtime import build_deepseek_gateway
+from opsmind.models.settings import DeepSeekSettings
 
 __all__ = [
+    "DeepSeekProvider",
+    "DeepSeekSettings",
     "MockInvocation",
     "MockModelProvider",
     "MockResponseQueueExhaustedError",
@@ -50,4 +55,5 @@ __all__ = [
     "ModelTask",
     "ModelUsage",
     "StructuredModelResponse",
+    "build_deepseek_gateway",
 ]

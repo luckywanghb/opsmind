@@ -97,9 +97,93 @@ future Agent-node tests assert profile routing without network calls or
 provider credentials. History access returns detached snapshots, so test code
 cannot mutate records held by the provider.
 
-## Future concrete adapters
+## DeepSeek provider
 
-A future adapter may connect a real model service such as DeepSeek, but that
-adapter must remain behind `ModelProvider`. It should be registered under a
-configuration name and selected through `ModelRoute`; no Agent node or business
-contract should need to know the provider SDK or concrete model details.
+`DeepSeekProvider` is the first real `ModelProvider` implementation. It uses
+DeepSeek's OpenAI-compatible async Responses API and is registered as
+`deepseek`. All DeepSeek-specific request fields, response shapes, SDK usage,
+thinking configuration, and error normalization remain inside the provider and
+its configuration/runtime composition modules. The Agent graph, nodes, state,
+and prompts continue to use the existing provider-neutral gateway contract.
+
+Plain calls send provider-neutral messages as Responses API message items and
+return a `ModelResponse`. Structured calls follow this validation path:
+
+```text
+Pydantic response model
+  -> model_json_schema()
+  -> Responses API text.format = json_schema
+  -> JSON text extraction and parsing
+  -> response_model.model_validate(...)
+  -> StructuredModelResponse[T]
+```
+
+Empty or malformed text responses and transport failures raise
+`ModelInvocationError`. Empty JSON, invalid/truncated JSON, unexpected response
+shapes, and Pydantic schema mismatches raise `ModelStructuredOutputError` for a
+structured call. The provider does not synthesize business defaults or perform
+semantic retries. SDK-default safe transport retries are left unchanged.
+
+Provider metadata is normalized where available:
+
+- DeepSeek response status becomes `finish_reason`;
+- input, output, and total token counts become `ModelUsage`;
+- the SDK/HTTP request ID is mapped when available; a response ID is not
+  mislabeled as a request ID;
+- latency is measured with a monotonic clock;
+- absent optional metadata remains `None` rather than a fabricated value.
+
+## Runtime configuration
+
+Build a gateway explicitly; there is no global provider or gateway singleton:
+
+```python
+from opsmind.models import DeepSeekSettings, build_deepseek_gateway
+
+settings = DeepSeekSettings.from_env()
+gateway = build_deepseek_gateway(settings)
+```
+
+The runtime factory installs these routes:
+
+| Profile | Provider | Default model |
+| --- | --- | --- |
+| `CHEAP` | `deepseek` | `deepseek-v4-flash` |
+| `STRONG` | `deepseek` | `deepseek-v4-pro` |
+
+The current Agent kernel continues to select only `CHEAP`. Configuring a strong
+route does not cause any node to upgrade itself.
+
+Supported environment variables are:
+
+| Variable | Required | Default |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | yes | none |
+| `DEEPSEEK_BASE_URL` | no | `https://api.deepseek.com` |
+| `OPSMIND_CHEAP_MODEL` | no | `deepseek-v4-flash` |
+| `OPSMIND_STRONG_MODEL` | no | `deepseek-v4-pro` |
+| `DEEPSEEK_TIMEOUT_SECONDS` | no | `60` |
+| `DEEPSEEK_REASONING_EFFORT` | no | `none` |
+
+The first kernel integration uses non-thinking mode. Thinking effort is a
+provider configuration choice and is not switched based on the model task.
+
+`DEEPSEEK_API_KEY` must be non-empty. It is held as a Pydantic `SecretStr` and
+is redacted from settings/provider repr, model dumps, JSON, logs, and normalized
+exception messages. `.env.example` contains only an empty placeholder; never
+commit a real key.
+
+## Live kernel smoke test
+
+Normal `pytest` runs exclude the `live` marker and are fully offline. To run
+the opt-in real-model connectivity and contract smoke test:
+
+```bash
+DEEPSEEK_API_KEY=... uv run --frozen pytest -m live
+```
+
+Without `DEEPSEEK_API_KEY`, that explicitly selected test is skipped. The smoke
+test runs the unchanged `OpsAgentState -> LangGraph -> ModelGateway` path for
+`WO20260001为什么一直没处理？` and checks that understanding and action-decision
+outputs pass their typed state contracts. It intentionally does not assert a
+specific business classification.
