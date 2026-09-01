@@ -34,7 +34,8 @@ does not call or probe a model provider.
 
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "service": "opsmind"
 }
 ```
 

@@ -54,7 +54,12 @@ def _error_response(
             request_id=_request_id(request),
         )
     )
-    return JSONResponse(status_code=status_code, content=payload.model_dump())
+    request_id = payload.error.request_id
+    return JSONResponse(
+        status_code=status_code,
+        content=payload.model_dump(),
+        headers={"X-Request-ID": request_id},
+    )
 
 
 def _trace_summary(result: AgentRunResult, node: str) -> str:

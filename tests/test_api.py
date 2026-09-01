@@ -95,7 +95,7 @@ def test_health_is_provider_independent() -> None:
     response = client.get("/api/v1/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "service": "opsmind"}
     assert response.headers["X-Request-ID"]
     assert provider.invocation_count == 0
 

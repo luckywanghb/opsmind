@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from unicodedata import category
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -39,7 +40,10 @@ class ChatRequest(ApiModel):
     @field_validator("message")
     @classmethod
     def reject_blank_message(cls, value: str) -> str:
-        if not value.strip():
+        if not any(
+            not character.isspace() and category(character) != "Cf"
+            for character in value
+        ):
             raise ValueError("message must not be blank")
         return value
 
@@ -95,6 +99,7 @@ class HealthResponse(ApiModel):
     """Process-level health response that does not probe model providers."""
 
     status: Literal["ok"] = "ok"
+    service: Literal["opsmind"] = "opsmind"
 
 
 class ErrorDetail(ApiModel):
