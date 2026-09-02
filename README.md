@@ -1,5 +1,23 @@
 # OpsMind
 
+## Web client
+
+Run the deterministic API and Vite client in separate terminals:
+
+```bash
+OPSMIND_MODEL_PROVIDER=mock uv run --frozen uvicorn opsmind.api.app:create_app --factory
+```
+
+```bash
+cd web
+npm ci
+npm run dev
+```
+
+The Vite development server proxies `/api` to `http://127.0.0.1:8000` by
+default. Set `OPSMIND_API_PROXY_TARGET` for a different local backend target,
+or `VITE_API_BASE_URL` when the browser should call an explicit API origin.
+
 OpsMind is a production-shaped, fully synthetic manufacturing IT operations
 Agent. It is built for learning and portfolio demonstration while preserving
 typed contracts, stateful execution, observability, bounded loops, and hard
