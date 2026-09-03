@@ -54,7 +54,7 @@ export function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [traceOpen, setTraceOpen] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const latestTrace = [...exchanges].reverse().find((item) => item.response)?.response?.trace ?? [];
+  const latestTrace = exchanges.at(-1)?.response?.trace ?? [];
 
   async function submit(message: string) {
     const clean = message.trim();

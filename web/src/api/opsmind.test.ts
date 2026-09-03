@@ -31,4 +31,19 @@ describe("sendChat", () => {
     expect((error as Error).message).toContain(message);
     expect((error as Error).message).not.toContain("private detail");
   });
+
+  it("rejects malformed successful trace data before it reaches the UI", async () => {
+    const malformed = { ...response, trace: [{ node: "understand_request", status: "completed" }] };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(malformed), { status: 200 }));
+    const error = await sendChat({ message: "why", source_context: { channel: "web-demo" } }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(OpsMindApiError);
+    expect(error).toMatchObject({ code: "INVALID_RESPONSE" });
+  });
+
+  it("rejects unknown backend enum values and invalid nullable fields", async () => {
+    const malformed = { ...response, understanding: { ...response.understanding, primary_intent: "WORK_ORDER", symptom: 42 } };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(malformed), { status: 200 }));
+    const error = await sendChat({ message: "why", source_context: { channel: "web-demo" } }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "INVALID_RESPONSE" });
+  });
 });

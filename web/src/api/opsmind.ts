@@ -17,6 +17,14 @@ export class OpsMindApiError extends Error {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const primaryIntents = new Set(["SYSTEM_OPERATION", "BUSINESS_RULE", "ACCESS_ISSUE", "WORKFLOW_ISSUE", "DATA_ISSUE", "OTHER"]);
+const requestTypes = new Set(["HOW_TO", "EXPLAIN", "DIAGNOSE", "CHECK_STATUS", "EXECUTE_CHANGE", "CONTINUE_CASE", "CONFIRM_RESOLVED", "OTHER"]);
+const riskSignals = new Set(["NONE", "PRIVILEGED_CHANGE", "BROAD_OUTAGE", "SECURITY_SUSPECTED", "DESTRUCTIVE_OPERATION"]);
+const agentActions = new Set(["ASK_USER", "SEARCH", "REPLY", "TRANSFER_HUMAN", "END_CONVERSATION"]);
+const modelTasks = new Set(["REQUEST_UNDERSTANDING", "ACTION_DECISION"]);
+const modelProfiles = new Set(["CHEAP", "STRONG", "FALLBACK"]);
+const isNullableString = (value: unknown): value is string | null => value === null || typeof value === "string";
+
 function isChatResponse(value: unknown): value is ChatResponse {
   if (!isObject(value) || !isObject(value.understanding) || !isObject(value.decision)) return false;
   const trace = value.trace;
@@ -24,15 +32,24 @@ function isChatResponse(value: unknown): value is ChatResponse {
     typeof value.request_id === "string" &&
     typeof value.thread_id === "string" &&
     value.status === "decision_ready" &&
-    typeof value.understanding.primary_intent === "string" &&
-    typeof value.understanding.request_type === "string" &&
+    primaryIntents.has(String(value.understanding.primary_intent)) &&
+    requestTypes.has(String(value.understanding.request_type)) &&
+    isNullableString(value.understanding.symptom) &&
     isObject(value.understanding.entities) &&
-    typeof value.understanding.risk_signal === "string" &&
-    typeof value.decision.action === "string" &&
+    riskSignals.has(String(value.understanding.risk_signal)) &&
+    isNullableString(value.understanding.uncertainty) &&
+    agentActions.has(String(value.decision.action)) &&
     typeof value.decision.goal === "string" &&
     typeof value.decision.rationale === "string" &&
     Array.isArray(trace) &&
-    trace.every((entry) => isObject(entry) && typeof entry.node === "string" && entry.status === "completed")
+    trace.every((entry) =>
+      isObject(entry) &&
+      typeof entry.node === "string" &&
+      modelTasks.has(String(entry.task)) &&
+      modelProfiles.has(String(entry.profile)) &&
+      entry.status === "completed" &&
+      typeof entry.summary === "string"
+    )
   );
 }
 
