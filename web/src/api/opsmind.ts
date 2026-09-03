@@ -21,7 +21,7 @@ const primaryIntents = new Set(["SYSTEM_OPERATION", "BUSINESS_RULE", "ACCESS_ISS
 const requestTypes = new Set(["HOW_TO", "EXPLAIN", "DIAGNOSE", "CHECK_STATUS", "EXECUTE_CHANGE", "CONTINUE_CASE", "CONFIRM_RESOLVED", "OTHER"]);
 const riskSignals = new Set(["NONE", "PRIVILEGED_CHANGE", "BROAD_OUTAGE", "SECURITY_SUSPECTED", "DESTRUCTIVE_OPERATION"]);
 const agentActions = new Set(["ASK_USER", "SEARCH", "REPLY", "TRANSFER_HUMAN", "END_CONVERSATION"]);
-const modelTasks = new Set(["REQUEST_UNDERSTANDING", "ACTION_DECISION"]);
+const modelTasks = new Set(["REQUEST_UNDERSTANDING", "ACTION_DECISION", "TOOL_SELECTION", "TOOL_RESULT_REVIEW", "CLARIFICATION", "RESPONSE_GENERATION", "HANDOFF_GENERATION"]);
 const modelProfiles = new Set(["CHEAP", "STRONG", "FALLBACK"]);
 const isNullableString = (value: unknown): value is string | null => value === null || typeof value === "string";
 

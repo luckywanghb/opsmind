@@ -30,7 +30,14 @@ export type AgentAction =
   | "TRANSFER_HUMAN"
   | "END_CONVERSATION";
 
-export type ModelTask = "REQUEST_UNDERSTANDING" | "ACTION_DECISION";
+export type ModelTask =
+  | "REQUEST_UNDERSTANDING"
+  | "ACTION_DECISION"
+  | "TOOL_SELECTION"
+  | "TOOL_RESULT_REVIEW"
+  | "CLARIFICATION"
+  | "RESPONSE_GENERATION"
+  | "HANDOFF_GENERATION";
 export type ModelProfile = "CHEAP" | "STRONG" | "FALLBACK";
 
 export interface ChatRequest {

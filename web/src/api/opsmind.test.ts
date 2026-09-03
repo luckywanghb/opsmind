@@ -46,4 +46,10 @@ describe("sendChat", () => {
     const error = await sendChat({ message: "why", source_context: { channel: "web-demo" } }).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ code: "INVALID_RESPONSE" });
   });
+
+  it("accepts every canonical model task exposed by the backend contract", async () => {
+    const futureTrace = { ...response, trace: [{ ...response.trace[0], task: "TOOL_SELECTION" }] };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(futureTrace), { status: 200 }));
+    await expect(sendChat({ message: "why", source_context: { channel: "web-demo" } })).resolves.toEqual(futureTrace);
+  });
 });

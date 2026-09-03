@@ -14,8 +14,8 @@ const prompts = [
 
 interface Exchange { message: string; response?: ChatResponse; error?: { message: string; requestId?: string } }
 
-export function ChatErrorState({ message, requestId }: { message: string; requestId?: string }) {
-  return <div className="error-state" role="alert"><strong>{message}</strong>{requestId && <small>Request ID · {requestId}</small>}</div>;
+export function ChatErrorState({ message, requestId, onRetry }: { message: string; requestId?: string; onRetry?: () => void }) {
+  return <div className="error-state" role="alert"><div><strong>{message}</strong>{requestId && <small>Request ID · {requestId}</small>}</div>{onRetry && <button type="button" onClick={onRetry}>重试本次请求</button>}</div>;
 }
 
 function Understanding({ response }: { response: ChatResponse }) {
@@ -107,7 +107,7 @@ export function ChatPage() {
             <div className="exchange" key={`${exchange.message}-${index}`}>
               <div className="user-message"><span>你</span><p>{exchange.message}</p></div>
               {exchange.response && <div className="agent-response"><div className="agent-response__intro"><span className="mini-mark"><Icon name="bot" /></span><div><strong>已完成请求理解</strong><p>以下内容来自本次真实 Agent Kernel 响应。</p></div></div><Understanding response={exchange.response} /><Decision response={exchange.response} /><small className="request-id">Request ID · {exchange.response.request_id}</small></div>}
-              {exchange.error && <ChatErrorState {...exchange.error} />}
+              {exchange.error && <ChatErrorState {...exchange.error} onRetry={() => runSubmit(exchange.message)} />}
             </div>
           ))}
           {loading && <div className="loading-state" role="status"><span /><span /><span />正在理解请求并生成动作决策…</div>}

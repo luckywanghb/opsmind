@@ -58,7 +58,10 @@ it("reuses the returned thread id for another message in the same page session",
 });
 
 it("renders a safe error state with its troubleshooting id", () => {
-  render(<ChatErrorState message="模型服务暂时不可用，请稍后重试。" requestId="req-failed" />);
+  const onRetry = vi.fn();
+  render(<ChatErrorState message="模型服务暂时不可用，请稍后重试。" requestId="req-failed" onRetry={onRetry} />);
   expect(screen.getByRole("alert")).toHaveTextContent("模型服务暂时不可用");
   expect(screen.getByRole("alert")).toHaveTextContent("req-failed");
+  fireEvent.click(screen.getByRole("button", { name: "重试本次请求" }));
+  expect(onRetry).toHaveBeenCalledOnce();
 });
