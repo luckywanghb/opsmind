@@ -8,6 +8,7 @@ the same registered-tool contract used by a real provider.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Coroutine, Iterable
 from typing import Any, TypeVar
 
@@ -308,7 +309,215 @@ def test_d01_work_order_runs_selection_execution_review_redecision_and_reply() -
     assert "等待时长不等于未超时" in review_prompt
     assert "false" in review_prompt
     response_prompt = provider.history[5].messages[0].content
-    assert "do not turn a duration into an SLA/timeout conclusion" in response_prompt
+    assert "elapsed duration is not an SLA" in response_prompt
+
+
+def test_latest_review_capabilities_and_source_fields_reach_later_contexts() -> None:
+    provider = MockModelProvider(
+        structured_responses=[
+            understanding(),
+            decision(),
+            selection("work_order_query", {"work_order_id": "WO20260001"}),
+            review(
+                sufficient=True,
+                summary="已复核当前工单快照；审批阈值未由当前工具返回。",
+                facts=["当前节点为设备主管审批", "处理人为 U10108", "等待 4 小时"],
+                unresolved=["审批阈值未由当前工具返回"],
+            ),
+            decision(
+                "REPLY",
+                goal="基于当前快照给出有边界的回复",
+                rationale="当前事实足够",
+            ),
+        ],
+        responses=["当前可确认工单快照已整理。"],
+    )
+
+    run_async(
+        run_ops_agent(
+            state("WO20260001为什么一直没处理？"),
+            gateway(provider),
+        )
+    )
+
+    selection_context = json.loads(provider.history[2].messages[1].content)
+    review_context = json.loads(provider.history[3].messages[1].content)
+    redecision_context = json.loads(provider.history[4].messages[1].content)
+    response_context = json.loads(provider.history[5].messages[1].content)
+
+    assert [item["name"] for item in selection_context["available_tools"]] == [
+        "work_order_query",
+        "permission_query",
+        "incident_query",
+    ]
+    assert all(
+        item["mode"] == "READ_ONLY"
+        for item in selection_context["available_tools"]
+    )
+    assert review_context["expected_resolution"] == "确认与当前问题相关的事实"
+    assert review_context["selected_tool_schema"]["properties"]["waiting_hours"][
+        "description"
+    ].startswith("Elapsed waiting duration")
+    assert "message" not in review_context["selected_tool_schema"]["properties"]
+    assert review_context["available_tools"][0]["name"] == "work_order_query"
+    assert redecision_context["latest_review"] == {
+        "selected_tool": "work_order_query",
+        "expected_resolution": "确认与当前问题相关的事实",
+        "review_summary": "已复核当前工单快照；审批阈值未由当前工具返回。",
+        "evidence_sufficient": True,
+        "recommended_action": "REPLY",
+        "result_status": "found",
+    }
+    for context in (redecision_context, response_context):
+        assert context["available_tools"][0]["name"] == "work_order_query"
+        key_fields = context["evidence"][0]["key_fields"]
+        assert key_fields["current_handler"] == "U10108"
+        assert key_fields["waiting_hours"] == 4.0
+        assert key_fields["abnormal"] is False
+        assert "已找到工单状态快照" not in json.dumps(context, ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    ("review_sufficient", "review_action", "decision_action"),
+    [
+        (True, "REPLY", "ASK_USER"),
+        (False, "ASK_USER", "REPLY"),
+    ],
+)
+def test_review_recommendation_is_advisory_to_fresh_action_decision(
+    review_sufficient: bool,
+    review_action: str,
+    decision_action: str,
+) -> None:
+    provider = MockModelProvider(
+        structured_responses=[
+            understanding(),
+            decision(),
+            selection("work_order_query", {"work_order_id": "WO20260001"}),
+            review(
+                sufficient=review_sufficient,
+                summary="已复核当前只读快照。",
+                facts=["返回了类型化状态字段"],
+                action=review_action,
+            ),
+            decision(
+                decision_action,
+                goal="由最新动作决策继续处理",
+                rationale="重新评估当前上下文",
+            ),
+        ],
+        responses=["基于当前信息继续处理。"],
+    )
+
+    result = run_async(
+        run_ops_agent(
+            state("请查询工单当前状态"),
+            gateway(provider),
+        )
+    )
+
+    assert result.decision.action.value == decision_action
+    assert provider.history[4].task is ModelTask.ACTION_DECISION
+    assert provider.history[-1].task is (
+        ModelTask.CLARIFICATION
+        if decision_action == "ASK_USER"
+        else ModelTask.RESPONSE_GENERATION
+    )
+    terminal_context = json.loads(provider.history[-1].messages[1].content)
+    assert terminal_context["latest_review"]["recommended_action"] == review_action
+    assert terminal_context["available_tools"][0]["name"] == "work_order_query"
+    terminal_prompt = provider.history[-1].messages[0].content
+    assert "unexecuted call" in terminal_prompt
+    if decision_action == "ASK_USER":
+        assert "unexecuted call/result" in terminal_prompt
+    assert result.task.status.value == (
+        "WAITING_USER" if decision_action == "ASK_USER" else "RESOLVED"
+    )
+
+
+def test_found_snapshot_can_answer_with_explicit_unknown_threshold() -> None:
+    async def alternate_work_order(
+        request: WorkOrderQueryRequest,
+    ) -> WorkOrderQueryResponse:
+        return WorkOrderQueryResponse(
+            result_status=ToolResultStatus.FOUND,
+            work_order_id=request.work_order_id,
+            status="QUEUED",
+            current_node="夜班审批",
+            current_handler="U90001",
+            waiting_hours=2.5,
+            abnormal=False,
+        )
+
+    registry = ToolRegistry(
+        [
+            RegisteredTool(
+                spec=ToolSpec(
+                    name="work_order_query",
+                    description="Alternate fixture status query",
+                    mode=ToolMode.READ_ONLY,
+                ),
+                request_model=WorkOrderQueryRequest,
+                response_model=WorkOrderQueryResponse,
+                handler=alternate_work_order,
+            )
+        ]
+    )
+    provider = MockModelProvider(
+        structured_responses=[
+            understanding(
+                entities={"work_order_id": "WO-UNSEEN-BUT-REGISTERED"},
+            ),
+            decision(),
+            selection(
+                "work_order_query",
+                {"work_order_id": "WO-UNSEEN-BUT-REGISTERED"},
+            ),
+            review(
+                sufficient=True,
+                summary="已确认夜班审批快照；审批阈值未由当前工具返回。",
+                facts=[
+                    "当前节点为夜班审批",
+                    "处理人为 U90001",
+                    "等待 2.5 小时",
+                    "源标记 abnormal=false",
+                ],
+                unresolved=["审批阈值未由当前工具返回"],
+            ),
+            decision(
+                "REPLY",
+                goal="回复当前快照并说明限制",
+                rationale="当前事实足以给出有边界的回复",
+            ),
+        ],
+        responses=[
+            "当前节点为夜班审批，处理人为 U90001，已等待 2.5 小时；"
+            "源系统未标记异常。审批阈值未由当前工具返回。"
+        ],
+    )
+
+    result = run_async(
+        run_ops_agent(
+            state("WO-UNSEEN-BUT-REGISTERED当前状态？"),
+            gateway(provider),
+            registry,
+        )
+    )
+
+    assert result.task.status.value == "RESOLVED"
+    assert result.response.message is not None
+    assert "未提供" not in result.evidence.items[0].key_fields
+    assert result.evidence.items[0].key_fields["current_handler"] == "U90001"
+    assert result.facts.unresolved_questions == ["审批阈值未由当前工具返回"]
+    final_context = json.loads(provider.history[5].messages[1].content)
+    assert final_context["available_tools"] == [
+        {
+            "name": "work_order_query",
+            "description": "Alternate fixture status query",
+            "mode": "READ_ONLY",
+        }
+    ]
+    assert final_context["evidence"][0]["key_fields"]["waiting_hours"] == 2.5
 
 
 @pytest.mark.parametrize(
@@ -479,6 +688,9 @@ def test_privileged_write_selection_is_blocked_without_invoking_handler() -> Non
         ModelTask.TOOL_SELECTION,
         ModelTask.HANDOFF_GENERATION,
     ]
+    handoff_context = json.loads(provider.history[-1].messages[1].content)
+    assert handoff_context["available_tools"][0]["name"] == "grant_admin"
+    assert "available_tools" in provider.history[-1].messages[0].content
 
 
 def test_unknown_tool_and_invalid_arguments_are_rejected_before_execution() -> None:

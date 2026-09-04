@@ -17,16 +17,21 @@ from opsmind.models import (
     ModelTask,
 )
 from opsmind.state import DecisionState, OpsAgentState
+from opsmind.tools import ToolRegistry
 
 
 async def decide_action(
     state: OpsAgentState,
     gateway: ModelGateway,
+    tool_registry: ToolRegistry,
 ) -> dict[str, DecisionState]:
     """Choose the next action and return only a decision update."""
 
     canonical_state = OpsAgentState.model_validate(state)
-    context = build_decision_context(canonical_state)
+    context = build_decision_context(
+        canonical_state,
+        tool_registry.describe_capabilities(),
+    )
     request = ModelRequest(
         task=ModelTask.ACTION_DECISION,
         profile=ModelProfile.CHEAP,

@@ -24,6 +24,7 @@ from opsmind import (
     PrimaryIntent,
     RequestType,
     StructuredModelResponse,
+    ToolRegistry,
     build_decision_context,
     build_ops_graph,
     build_understanding_context,
@@ -258,16 +259,18 @@ def test_context_builders_expose_only_node_specific_fields() -> None:
         "source_context",
     }
 
-    decision_context = build_decision_context(state)
+    decision_context = build_decision_context(state, [])
     assert set(decision_context.model_dump()) == {
         "current_query",
         "understanding",
         "task",
         "facts",
         "evidence",
+        "latest_review",
+        "available_tools",
         "loop",
     }
-    assert "must-not-be-visible" not in decision_context.model_dump_json()
+    assert "must-not-be-visible" in decision_context.model_dump_json()
 
 
 def test_understanding_request_does_not_dump_unrelated_state() -> None:
@@ -372,7 +375,9 @@ def test_invalid_decision_output_does_not_write_decision_state() -> None:
     state_after_understanding.understanding = valid_understanding
 
     with pytest.raises(ModelStructuredOutputError):
-        run_async(decide_action(state_after_understanding, gateway(provider)))
+        run_async(
+            decide_action(state_after_understanding, gateway(provider), ToolRegistry())
+        )
 
     assert state_after_understanding.understanding.primary_intent is (
         PrimaryIntent.WORKFLOW_ISSUE

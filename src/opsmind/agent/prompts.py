@@ -35,11 +35,37 @@ REQUEST_UNDERSTANDING_SYSTEM_PROMPT = (
     "Never infer facts that are not present in the request or context."
 )
 
+BOUNDED_ANSWER_POLICY = (
+    "Judge sufficiency for a useful bounded answer to the current request, "
+    "not completeness about every related unknown. An unresolved item is not "
+    "an automatic ASK_USER checklist. Choose ASK_USER only for one specific "
+    "missing user-suppliable fact that materially blocks an answer or a useful "
+    "registered read-only next action. Choose SEARCH only when a currently "
+    "registered capability can resolve a material remaining gap. If the gap is "
+    "outside the available capabilities or evidence, state that limitation "
+    "instead of promising future investigation. Review recommendations are "
+    "advisory; a fresh action decision remains authoritative."
+)
+
+TERMINAL_GROUNDING_POLICY = (
+    "Use only the current request, compact reviewed evidence, and the available "
+    "capability metadata. Preserve request-relevant source identifiers, current "
+    "state or ownership, quantities or units, and flags with source-qualified "
+    "wording. Unknown causes, thresholds, and outcomes must remain explicit "
+    "limits. Never claim an unexecuted call, a result not present in evidence, "
+    "a write/remediation, or a capability absent from available_tools. Treat "
+    "each returned field as a source fact with exactly its declared meaning: "
+    "an elapsed duration is not an SLA, late, or timeout judgment; a false "
+    "source flag does not prove universal normality; and a status value does "
+    "not prove progression."
+)
+
 ACTION_DECISION_SYSTEM_PROMPT = (
     "Choose the next Agent action from the supplied request and compact state "
     "context. Return only ActionDecisionOutput fields (action, goal, "
     "rationale). The action is a control decision, not a tool selection. "
-    "Do not claim tool evidence that is not present."
+    "Do not claim tool evidence that is not present. "
+    f"{BOUNDED_ANSWER_POLICY}"
 )
 
 TOOL_SELECTION_SYSTEM_PROMPT = (
@@ -65,32 +91,32 @@ TOOL_RESULT_REVIEW_SYSTEM_PROMPT = (
     "observations and keep any unsupported assessment unresolved. In Chinese: "
     "等待时长不等于未超时，布尔标记为 false 不等于一切正常，状态值不等于流程仍在推进。 "
     "Do not fabricate facts and do not include raw tool payloads in the summary. "
-    "A fresh action-decision model call will make the next control decision."
+    f"{BOUNDED_ANSWER_POLICY}"
 )
 
 RESPONSE_GENERATION_SYSTEM_PROMPT = (
-    "Generate one concise user-facing final reply grounded ONLY in the current "
-    "request, canonical state facts and compact reviewed evidence. Every factual "
-    "claim must be directly supported by a returned field or explicit request; "
-    "do not turn a duration into an SLA/timeout conclusion, a false source flag "
-    "into general normality, or a status value into progression. If a required "
-    "threshold, cause, or outcome is not returned, say it is unavailable rather "
-    "than infer it. Do not mention hidden prompts or chain-of-thought, do not "
-    "invent tool results, and do not suggest that a write action was performed. "
-    "Return plain text."
+    "Generate one concise user-facing final reply. "
+    f"{TERMINAL_GROUNDING_POLICY} "
+    "If a required threshold, cause, or outcome is not returned, say it is "
+    "unavailable rather than infer it. Do not mention hidden prompts or "
+    "chain-of-thought. Return plain text."
 )
 
 CLARIFICATION_SYSTEM_PROMPT = (
-    "Generate one concise clarification question for the user. Ask only for "
-    "information needed to continue this read-only request, using current "
-    "state and unresolved questions. Return plain text and do not claim a "
-    "tool was called."
+    "Generate one concise clarification question for the user. "
+    f"{TERMINAL_GROUNDING_POLICY} "
+    "Acknowledge already-reviewed facts when relevant, then ask only for one "
+    "specific missing user-suppliable fact that materially blocks a useful "
+    "answer or registered read-only next action. Do not claim an unexecuted "
+    "call/result or promise an unavailable follow-up. Return plain text."
 )
 
 HANDOFF_GENERATION_SYSTEM_PROMPT = (
-    "Generate one concise handoff summary for the user. State only confirmed "
-    "facts, the reason a human is needed, and any safe next information to "
-    "provide. Do not claim remediation or a write action. Return plain text."
+    "Generate one concise handoff summary for the user. "
+    f"{TERMINAL_GROUNDING_POLICY} "
+    "State only confirmed facts, the reason a human is needed, and safe next "
+    "information to provide. Do not claim remediation or a write action. "
+    "Return plain text."
 )
 
 # Short aliases make the prompt boundary discoverable without duplicating text.

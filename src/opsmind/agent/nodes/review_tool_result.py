@@ -23,7 +23,7 @@ from opsmind.models import (
     ModelTask,
 )
 from opsmind.state import EvidenceItem, FactsState, OpsAgentState, ToolState
-from opsmind.tools import ToolInvocationResult
+from opsmind.tools import ToolInvocationResult, ToolRegistry
 
 _MAX_COMPACT_TEXT = 2_000
 _MAX_FACTS = 50
@@ -62,6 +62,7 @@ async def review_tool_result(
     state: OpsAgentState,
     gateway: ModelGateway,
     execution: ToolInvocationResult,
+    tool_registry: ToolRegistry,
 ) -> dict[str, object]:
     """Review one transient tool result and retain only compact evidence.
 
@@ -72,9 +73,15 @@ async def review_tool_result(
 
     canonical_state = OpsAgentState.model_validate(state)
     payload = _result_payload(execution)
+    selected_tool_schema = cast(
+        dict[str, JsonValue],
+        tool_registry.describe_for_review(execution.tool_name)["output_schema"],
+    )
     context = build_tool_review_context(
         canonical_state,
         result=payload,
+        available_tools=tool_registry.describe_capabilities(),
+        selected_tool_schema=selected_tool_schema,
         error_code=execution.error_code,
     )
     request = ModelRequest(

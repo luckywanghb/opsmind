@@ -10,6 +10,7 @@ from pydantic import Field
 
 from opsmind.agent.errors import AgentInputError
 from opsmind.state import (
+    AgentAction,
     DecisionState,
     EvidenceItem,
     FactsState,
@@ -20,6 +21,7 @@ from opsmind.state import (
     StateModel,
     TaskState,
     TaskStatus,
+    ToolState,
     UnderstandingState,
 )
 
@@ -60,6 +62,27 @@ class DecisionLoopContext(StateModel):
     max_retries: int
 
 
+class LatestReviewContext(StateModel):
+    """Compact advisory output from the most recent tool-result review."""
+
+    selected_tool: str | None = None
+    expected_resolution: str | None = None
+    review_summary: str | None = None
+    evidence_sufficient: bool | None = None
+    recommended_action: AgentAction | None = None
+    result_status: str | None = None
+    error_code: str | None = None
+
+
+class ToolCapabilityContext(StateModel):
+    """Bounded metadata for capabilities available in this graph run."""
+
+    name: str
+    description: str
+    mode: str
+    output_schema: FiniteJsonObject | None = None
+
+
 class EvidenceSummaryContext(StateModel):
     """Compact evidence projection; raw tool results never enter context."""
 
@@ -78,6 +101,8 @@ class DecisionContext(StateModel):
     task: DecisionTaskContext
     facts: DecisionFactsContext
     evidence: list[EvidenceSummaryContext] = Field(default_factory=list)
+    latest_review: LatestReviewContext
+    available_tools: list[ToolCapabilityContext] = Field(default_factory=list)
     loop: DecisionLoopContext
 
 
@@ -104,9 +129,15 @@ class ToolReviewContext(StateModel):
     """Typed result projection sent to the result-review model."""
 
     current_query: str
+    task: DecisionTaskContext
+    decision: DecisionState
     selected_tool: str
     arguments: FiniteJsonObject
+    expected_resolution: str | None = None
     result: FiniteJsonObject
+    available_tools: list[ToolCapabilityContext] = Field(default_factory=list)
+    selected_tool_schema: FiniteJsonObject = Field(default_factory=dict)
+    prior_evidence: list[EvidenceSummaryContext] = Field(default_factory=list)
     error_code: str | None = None
 
 
@@ -118,6 +149,8 @@ class ResponseContext(StateModel):
     decision: DecisionState
     facts: DecisionFactsContext
     evidence: list[EvidenceSummaryContext] = Field(default_factory=list)
+    latest_review: LatestReviewContext
+    available_tools: list[ToolCapabilityContext] = Field(default_factory=list)
     handoff_required: bool = False
     safety_capability: str
 
@@ -180,6 +213,31 @@ def _facts_context(facts: FactsState) -> DecisionFactsContext:
     )
 
 
+def _latest_review_context(tool: ToolState) -> LatestReviewContext:
+    """Project review fields without retaining any raw adapter output."""
+
+    return LatestReviewContext(
+        selected_tool=tool.selected_tool,
+        expected_resolution=tool.expected_resolution,
+        review_summary=tool.review_summary,
+        evidence_sufficient=tool.evidence_sufficient,
+        recommended_action=tool.recommended_action,
+        result_status=tool.last_result_status,
+        error_code=tool.last_error_code,
+    )
+
+
+def _capability_context(
+    available_tools: list[dict[str, Any]],
+) -> list[ToolCapabilityContext]:
+    """Validate and detach run-local capability metadata."""
+
+    return [
+        ToolCapabilityContext.model_validate(deepcopy(item))
+        for item in available_tools
+    ]
+
+
 def _loop_context(loop: LoopState) -> DecisionLoopContext:
     return DecisionLoopContext(
         round_count=loop.round_count,
@@ -191,7 +249,10 @@ def _loop_context(loop: LoopState) -> DecisionLoopContext:
     )
 
 
-def build_decision_context(state: OpsAgentState) -> DecisionContext:
+def build_decision_context(
+    state: OpsAgentState,
+    available_tools: list[dict[str, Any]],
+) -> DecisionContext:
     """Select the compact state projection needed for action decision."""
 
     canonical_state = _validated_state(state)
@@ -202,6 +263,8 @@ def build_decision_context(state: OpsAgentState) -> DecisionContext:
         task=_task_context(canonical_state.task),
         facts=_facts_context(canonical_state.facts),
         evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
+        latest_review=_latest_review_context(canonical_state.tool),
+        available_tools=_capability_context(available_tools),
         loop=_loop_context(canonical_state.loop),
     )
 
@@ -233,6 +296,8 @@ def build_tool_review_context(
     state: OpsAgentState,
     *,
     result: FiniteJsonObject,
+    available_tools: list[dict[str, Any]],
+    selected_tool_schema: FiniteJsonObject,
     error_code: str | None = None,
 ) -> ToolReviewContext:
     """Build a detached, typed result projection for one review call."""
@@ -244,14 +309,25 @@ def build_tool_review_context(
         raise AgentInputError("tool.selected_tool is required for result review")
     return ToolReviewContext(
         current_query=query,
+        task=_task_context(canonical_state.task),
+        decision=canonical_state.decision.model_copy(deep=True),
         selected_tool=selected_tool,
         arguments=deepcopy(canonical_state.tool.arguments),
+        expected_resolution=canonical_state.tool.expected_resolution,
         result=deepcopy(result),
+        available_tools=_capability_context(available_tools),
+        selected_tool_schema=deepcopy(selected_tool_schema),
+        prior_evidence=[
+            _evidence_summary(item) for item in canonical_state.evidence.items
+        ],
         error_code=error_code,
     )
 
 
-def build_response_context(state: OpsAgentState) -> ResponseContext:
+def build_response_context(
+    state: OpsAgentState,
+    available_tools: list[dict[str, Any]],
+) -> ResponseContext:
     """Build compact grounding context for user-facing text generation."""
 
     canonical_state = _validated_state(state)
@@ -262,6 +338,8 @@ def build_response_context(state: OpsAgentState) -> ResponseContext:
         decision=canonical_state.decision.model_copy(deep=True),
         facts=_facts_context(canonical_state.facts),
         evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
+        latest_review=_latest_review_context(canonical_state.tool),
+        available_tools=_capability_context(available_tools),
         handoff_required=canonical_state.handoff.required,
         safety_capability=canonical_state.safety.capability.value,
     )
@@ -273,7 +351,9 @@ __all__ = [
     "DecisionLoopContext",
     "DecisionTaskContext",
     "EvidenceSummaryContext",
+    "LatestReviewContext",
     "ResponseContext",
+    "ToolCapabilityContext",
     "ToolIdentityContext",
     "ToolReviewContext",
     "ToolSelectionContext",

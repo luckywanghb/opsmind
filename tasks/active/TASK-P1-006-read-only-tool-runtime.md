@@ -2,8 +2,9 @@
 
 ## Status
 
-TEST — Developer implementation and validation are ready for independent
-Tester and Reviewer stages; PM architecture gate is still required.
+TEST — Architect remediation is implemented and validated on a new commit;
+independent Tester and Reviewer stages plus the PM architecture gate remain
+required.
 
 ## Source
 
@@ -26,6 +27,8 @@ understand → decide → select typed read-only tool → execute → review evi
   incidents;
 - model-backed selection, result review, clarification, final reply, and
   handoff nodes;
+- explicit latest-review and run-local capability context for re-decision,
+  review, and terminal generation;
 - bounded rounds/tool calls/retries/timeouts and deterministic READ_ONLY policy;
 - compact evidence and actual safe trace/API projection;
 - Simplified Chinese prompt contract and minimal UI localization/rendering;

@@ -222,7 +222,7 @@ def build_ops_graph(
 
     async def decide_node(state: OpsAgentState) -> dict[str, Any]:
         canonical = _canonical(state)
-        update = await decide_action(canonical, gateway)
+        update = await decide_action(canonical, gateway, registry)
         decision = update["decision"]
         assert isinstance(decision, DecisionState)
         assert decision.action is not None
@@ -430,6 +430,7 @@ def build_ops_graph(
             canonical,
             gateway,
             execution_results[-1],
+            registry,
         )
         events.append(
             AgentTraceEvent(
@@ -444,7 +445,7 @@ def build_ops_graph(
 
     async def clarification_node(state: OpsAgentState) -> dict[str, Any]:
         canonical = _canonical(state)
-        update = await generate_clarification(canonical, gateway)
+        update = await generate_clarification(canonical, gateway, registry)
         events.append(
             AgentTraceEvent(
                 node="generate_clarification",
@@ -462,7 +463,7 @@ def build_ops_graph(
 
     async def response_node(state: OpsAgentState) -> dict[str, Any]:
         canonical = _canonical(state)
-        update = await generate_response(canonical, gateway)
+        update = await generate_response(canonical, gateway, registry)
         events.append(
             AgentTraceEvent(
                 node="generate_response",
@@ -480,7 +481,7 @@ def build_ops_graph(
 
     async def handoff_node(state: OpsAgentState) -> dict[str, Any]:
         canonical = _canonical(state)
-        update = await generate_handoff(canonical, gateway)
+        update = await generate_handoff(canonical, gateway, registry)
         events.append(
             AgentTraceEvent(
                 node="generate_handoff",

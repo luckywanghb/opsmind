@@ -81,21 +81,43 @@ class ToolResultReviewOutput(StateModel):
     """
 
     evidence_sufficient: bool = Field(
-        validation_alias=AliasChoices("evidence_sufficient", "sufficient")
+        validation_alias=AliasChoices("evidence_sufficient", "sufficient"),
+        description=(
+            "Whether the reviewed source facts support a useful bounded answer "
+            "to the current request; true does not mean every related unknown "
+            "or threshold has been resolved."
+        ),
     )
-    summary: Annotated[str, Field(min_length=1)]
+    summary: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description=(
+                "Compact source-grounded review summary; do not infer absent fields."
+            ),
+        ),
+    ]
     confirmed_facts: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("confirmed_facts", "facts"),
+        description="Direct observations from returned fields only.",
     )
     unresolved_questions: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("unresolved_questions", "unresolved"),
+        description=(
+            "Material limitations to evaluate, not an automatic clarification "
+            "checklist."
+        ),
     )
     recommended_action: AgentAction = Field(
         validation_alias=AliasChoices(
             "recommended_action", "next_action", "action"
-        )
+        ),
+        description=(
+            "Advisory review recommendation; the fresh action-decision model "
+            "remains authoritative."
+        ),
     )
 
     @field_validator("summary")

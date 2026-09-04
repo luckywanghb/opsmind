@@ -62,7 +62,7 @@ class ToolSpec(StateModel):
     """Public, model-visible metadata for one registered tool."""
 
     name: str = Field(min_length=1)
-    description: str = Field(min_length=1)
+    description: str = Field(min_length=1, max_length=500)
     mode: ToolMode = ToolMode.READ_ONLY
     timeout_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     retry_limit: int = Field(default=0, ge=0)
@@ -165,6 +165,44 @@ class ToolRegistry:
             for registration in self._tools.values()
         ]
 
+    def describe_capabilities(self) -> list[dict[str, object]]:
+        """Return bounded capability metadata for non-selection model calls.
+
+        Selection receives the complete request/response schemas from
+        :meth:`describe`.  Decision and terminal prompts only need to know
+        which capabilities are actually available, so they receive this
+        smaller projection instead of a duplicated schema payload.
+        """
+
+        return [
+            {
+                "name": registration.spec.name,
+                "description": registration.spec.description,
+                "mode": registration.spec.mode.value,
+            }
+            for registration in self._tools.values()
+        ]
+
+    def describe_for_review(self, tool_name: str) -> dict[str, object]:
+        """Return bounded metadata and output semantics for result review."""
+
+        registration = self.get(tool_name)
+        output_schema = registration.response_model.model_json_schema()
+        properties = output_schema.get("properties")
+        if isinstance(properties, dict):
+            # ``message`` is an adapter presentation aid and is intentionally
+            # excluded from the review contract just like it is excluded from
+            # the transient result payload.
+            properties = dict(properties)
+            properties.pop("message", None)
+            output_schema["properties"] = properties
+        return {
+            "name": registration.spec.name,
+            "description": registration.spec.description,
+            "mode": registration.spec.mode.value,
+            "output_schema": _bounded_schema(output_schema),
+        }
+
     def validate_call(self, tool_name: str, arguments: object) -> ToolCall:
         """Validate a model selection without executing an adapter."""
 
@@ -222,6 +260,28 @@ class ToolRegistry:
         """Create a run-local registry snapshot without mutable shared state."""
 
         return ToolRegistry(list(self._tools.values()))
+
+
+def _bounded_schema(value: object, *, depth: int = 0) -> object:
+    """Keep model-visible review schema metadata finite and readable."""
+
+    if depth >= 4:
+        return "schema-depth-limit"
+    if isinstance(value, str):
+        return value[:500]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, list):
+        return [
+            _bounded_schema(item, depth=depth + 1)
+            for item in value[:50]
+        ]
+    if isinstance(value, dict):
+        return {
+            str(key)[:100]: _bounded_schema(item, depth=depth + 1)
+            for key, item in list(value.items())[:50]
+        }
+    return str(value)[:500]
 
 
 __all__ = [

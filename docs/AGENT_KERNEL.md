@@ -35,7 +35,9 @@ updates only `state.understanding`.
 
 `decide_action` calls `ACTION_DECISION` with the `CHEAP` profile.  It is the
 only control router; Python routes only on the validated model action and
-never maps intent, wording, or demo IDs to a tool.
+never maps intent, wording, or demo IDs to a tool.  On later turns its context
+includes the latest compact review projection and capabilities from the
+run-local registry; review recommendations remain advisory.
 
 `select_tool` receives runtime-registered descriptions and typed JSON Schemas,
 then returns a validated `ToolState` selection.  The registry checks the name
@@ -45,12 +47,16 @@ timeout, duplicate-call protection, and normalized typed output.
 `review_tool_result` calls `TOOL_RESULT_REVIEW` and projects a compact summary,
 confirmed facts, unresolved questions, and an evidence item.  The next action
 is selected by a fresh `decide_action` model call; review recommendations are
-advisory and are not Python business routing.
+advisory and are not Python business routing.  Review receives the selected
+tool's bounded output schema/semantics and available capability metadata.
 
 The terminal text nodes use `CLARIFICATION`, `RESPONSE_GENERATION`, and
 `HANDOFF_GENERATION`.  For Chinese input, prompts require Simplified Chinese
 for user-facing natural language while enum values, schema keys, and tool
-names remain English.
+names remain English.  All three use the same bounded-answer and grounding
+policy: unresolved questions do not automatically force clarification, and
+terminal text cannot claim unexecuted calls, unavailable capabilities, writes,
+or unsupported threshold/progression/normality conclusions.
 
 ## Runtime limits and safety
 

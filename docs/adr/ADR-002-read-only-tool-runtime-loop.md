@@ -37,6 +37,37 @@ transient between execution and review.  Only compact review facts and an
 `EvidenceItem` enter canonical state; adapter presentation messages and raw
 payload blobs do not.
 
+## Architect remediation delta
+
+The final architecture correction keeps the topology and canonical state
+unchanged while repairing the model context boundaries:
+
+- Action-decision context now carries a typed latest-review projection
+  (`evidence_sufficient`, advisory `recommended_action`, review summary,
+  result status/error, selected tool and selection goal), compact source
+  evidence, and bounded capability metadata from the graph's run-local
+  registry.
+- Result review receives the selected tool's output-field schema and semantics,
+  the current task/selection goal, prior compact evidence, and the same
+  run-local capability metadata.  Terminal response, clarification, and
+  handoff contexts receive bounded capability metadata and latest-review state
+  as well.
+- A shared bounded-answer policy distinguishes “sufficient for a useful,
+  explicitly limited answer” from complete knowledge.  Unresolved questions
+  are not an automatic clarification checklist; `ASK_USER` requires a specific
+  materially blocking user-suppliable fact, and `SEARCH` requires a registered
+  capability that can address the gap. Review recommendations remain advisory;
+  a fresh model action decision owns routing.
+- Shared terminal grounding rules preserve relevant returned identifiers,
+  ownership/state, quantities/units and source flags, while prohibiting
+  unsupported SLA/timeout, progression, universal-normality, unexecuted-call,
+  unavailable-capability, or write/remediation claims.  No prose postprocessor
+  or case-specific rule was added.
+
+The registry dependency is explicitly injected by the graph into every node
+that needs capability metadata.  Nodes do not construct a hidden default
+registry, and capability/schema metadata is not persisted in canonical state.
+
 ## Contracts and limits
 
 The three task-scoped synthetic adapters are:

@@ -18,6 +18,7 @@ from opsmind.models import (
     ModelTask,
 )
 from opsmind.state import HandoffState, OpsAgentState, ResponseState
+from opsmind.tools import ToolRegistry
 
 
 async def _generate_text(
@@ -27,11 +28,15 @@ async def _generate_text(
     task: ModelTask,
     node: str,
     system_prompt: str,
+    tool_registry: ToolRegistry,
 ) -> str:
     """Generate bounded user-facing text through the provider-neutral gateway."""
 
     canonical_state = OpsAgentState.model_validate(state)
-    context = build_response_context(canonical_state)
+    context = build_response_context(
+        canonical_state,
+        tool_registry.describe_capabilities(),
+    )
     request = ModelRequest(
         task=task,
         profile=ModelProfile.CHEAP,
@@ -64,6 +69,7 @@ async def _generate_text(
 async def generate_response(
     state: OpsAgentState,
     gateway: ModelGateway,
+    tool_registry: ToolRegistry,
 ) -> dict[str, ResponseState]:
     """Generate a grounded final reply after a REPLY action."""
 
@@ -73,6 +79,7 @@ async def generate_response(
         task=ModelTask.RESPONSE_GENERATION,
         node="generate_response",
         system_prompt=RESPONSE_GENERATION_SYSTEM_PROMPT,
+        tool_registry=tool_registry,
     )
     return {"response": ResponseState(message=message, is_final=True)}
 
@@ -80,6 +87,7 @@ async def generate_response(
 async def generate_clarification(
     state: OpsAgentState,
     gateway: ModelGateway,
+    tool_registry: ToolRegistry,
 ) -> dict[str, ResponseState]:
     """Generate one clarification question; ASK_USER ends this run."""
 
@@ -89,6 +97,7 @@ async def generate_clarification(
         task=ModelTask.CLARIFICATION,
         node="generate_clarification",
         system_prompt=CLARIFICATION_SYSTEM_PROMPT,
+        tool_registry=tool_registry,
     )
     return {"response": ResponseState(message=message, is_final=False)}
 
@@ -96,6 +105,7 @@ async def generate_clarification(
 async def generate_handoff(
     state: OpsAgentState,
     gateway: ModelGateway,
+    tool_registry: ToolRegistry,
 ) -> dict[str, object]:
     """Generate a safe human-handoff summary."""
 
@@ -105,6 +115,7 @@ async def generate_handoff(
         task=ModelTask.HANDOFF_GENERATION,
         node="generate_handoff",
         system_prompt=HANDOFF_GENERATION_SYSTEM_PROMPT,
+        tool_registry=tool_registry,
     )
     return {
         "handoff": HandoffState(required=True, summary=message),

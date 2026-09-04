@@ -36,6 +36,7 @@ from opsmind import (
     RequestUnderstandingOutput,
     RiskSignal,
     StructuredModelResponse,
+    ToolRegistry,
     build_understanding_context,
     decide_action,
     run_ops_agent,
@@ -254,7 +255,7 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
     )
     provider = MockModelProvider(structured_responses=[decision_response()])
 
-    run_async(decide_action(state, make_gateway(provider)))
+    run_async(decide_action(state, make_gateway(provider), ToolRegistry()))
 
     payload = json.loads(provider.history[0].messages[-1].content)
     assert set(payload) == {
@@ -263,6 +264,8 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
         "task",
         "facts",
         "evidence",
+        "latest_review",
+        "available_tools",
         "loop",
     }
     serialized = provider.history[0].messages[-1].content
@@ -271,7 +274,6 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
         "原始问题-marker",
         "summary-marker",
         "raw-evidence-marker",
-        "tool-internal-marker",
         "safety-internal-marker",
         "handoff-internal-marker",
         "response-internal-marker",
@@ -307,7 +309,9 @@ def test_decision_node_also_rejects_missing_query_before_gateway_call() -> None:
     provider = MockModelProvider(structured_responses=[decision_response()])
 
     with pytest.raises(AgentInputError, match="current_query"):
-        run_async(decide_action(state_for(None), make_gateway(provider)))
+        run_async(
+            decide_action(state_for(None), make_gateway(provider), ToolRegistry())
+        )
 
     assert provider.invocation_count == 0
 
@@ -513,7 +517,7 @@ def test_nodes_route_exact_structured_schema_and_prompt_contract_through_gateway
     first_update = run_async(understand_request(state, gateway))
     intermediate = state.model_copy(deep=True)
     intermediate.understanding = first_update["understanding"]
-    run_async(decide_action(intermediate, gateway))
+    run_async(decide_action(intermediate, gateway, ToolRegistry()))
 
     assert provider.response_models == [
         RequestUnderstandingOutput,

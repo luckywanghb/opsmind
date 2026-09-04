@@ -22,6 +22,10 @@
 - Added source-field semantics and bilingual grounding constraints so duration,
   status, and boolean flags cannot be presented as unsupported SLA, progression,
   or general-normality conclusions.
+- Applied the Architect remediation: latest advisory review state and
+  run-local capability metadata now reach re-decision, review, and every
+  terminal context; shared bounded-answer policy governs reply, clarification,
+  and handoff without Python answer routing.
 - Added regression coverage for D01–D03 plus unseen IDs, invalid/unknown
   tools, read-only policy, adapter failure, limits, concurrency, and leakage.
 
@@ -31,7 +35,10 @@ Run from the task worktree with the locked dependency environment:
 
 ```text
 UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q
-→ 395 passed, 1 deselected, 1 warning
+→ 399 passed, 1 deselected, 1 warning
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q tests/test_tool_loop.py
+→ 19 passed
 
 UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen ruff check src tests
 → PASS
@@ -86,3 +93,6 @@ cd web && npm run build
 - Kept execution as a `HARNESS` trace event using the existing
   `TOOL_SELECTION` logical task enum; node names distinguish selection from
   execution and avoid introducing provider-routing semantics.
+- Kept `evidence_sufficient` and `recommended_action` advisory: a fresh model
+  action decision still owns control flow, including when its decision differs
+  from the review recommendation.
