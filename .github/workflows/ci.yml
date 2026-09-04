@@ -99,3 +99,33 @@ jobs:
           [[ "$RUFF_RESULT" == "success" ]]
           [[ "$MYPY_RESULT" == "success" ]]
           [[ "$LOCK_RESULT" == "success" ]]
+
+  frontend:
+    name: Web client validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run frontend tests
+        run: npm run test
+
+      - name: Build production bundle
+        run: npm run build
