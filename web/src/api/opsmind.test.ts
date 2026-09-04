@@ -52,4 +52,30 @@ describe("sendChat", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(futureTrace), { status: 200 }));
     await expect(sendChat({ message: "why", source_context: { channel: "web-demo" } })).resolves.toEqual(futureTrace);
   });
+
+  it("rejects malformed evidence metadata before rendering", async () => {
+    const malformed = {
+      ...response,
+      evidence: [{ source: "tool", summary: "facts", key_fields: {}, metadata: "private-detail", artifact_ref: null, timestamp: "2026-09-04T00:00:00Z" }],
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(malformed), { status: 200 }));
+    const error = await sendChat({ message: "why", source_context: { channel: "web-demo" } }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(OpsMindApiError);
+    expect(error).toMatchObject({ code: "INVALID_RESPONSE" });
+  });
+
+  it("rejects a completed response that has no final reply, evidence, or handoff", async () => {
+    const malformed = {
+      ...response,
+      status: "completed",
+      final_status: "RESOLVED",
+      final_reply: null,
+      evidence: [],
+      handoff: null,
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(malformed), { status: 200 }));
+    const error = await sendChat({ message: "why", source_context: { channel: "web-demo" } }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(OpsMindApiError);
+    expect(error).toMatchObject({ code: "INVALID_RESPONSE" });
+  });
 });
