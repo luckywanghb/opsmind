@@ -43,14 +43,15 @@ without provider credentials or network access.
 
 ## Deferred capabilities
 
-The following remain out of scope: conditional routing, loops and tool nodes;
-provider SDKs and retrieval; checkpoint/store/thread persistence; interrupts
-and human approval; write actions, API/UI/deployment surfaces; and Golden Case
-runtime branches.
+The following remain out of scope for ADR-001 and are superseded for the
+TASK-P1-006 runtime by ADR-002: additional Agent domains, checkpoint/store/
+thread persistence, interrupts and human approval, write actions, retrieval,
+and Golden Case runtime branches.  ADR-002 adds only the bounded synthetic
+read-only tool loop and its API/UI projection.
 
 ## Consequences
 
-The kernel is runnable and testable as one in-memory Agent run. It intentionally
-ends after recording an action decision, so `SEARCH` does not execute a tool.
-Future topology or state/persistence changes require a new architecture review
-and ADR.
+The original kernel remains the historical baseline for the architecture
+decision.  The active topology is documented in ADR-002; future persistence,
+write-capability, or approval changes require a new architecture review and
+ADR.

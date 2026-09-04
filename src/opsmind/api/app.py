@@ -20,6 +20,8 @@ from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
 from opsmind.api.schemas import (
     AgentTraceStep,
     ChatDecision,
+    ChatEvidence,
+    ChatHandoff,
     ChatRequest,
     ChatResponse,
     ChatUnderstanding,
@@ -71,6 +73,17 @@ def _trace_summary(result: AgentRunResult, node: str) -> str:
 
 
 def _trace(result: AgentRunResult) -> list[AgentTraceStep]:
+    if result.events:
+        return [
+            AgentTraceStep(
+                node=event.node,
+                task=event.task,
+                profile=event.profile,
+                status=event.status,
+                summary=event.summary,
+            )
+            for event in result.events
+        ]
     steps: list[AgentTraceStep] = []
     for invocation in result.invocations:
         node = invocation.request.metadata.get("node")
@@ -97,12 +110,35 @@ def _chat_response(
         result.state.understanding.model_dump()
     )
     decision = ChatDecision.model_validate(result.state.decision.model_dump())
+    state_status = result.state.task.status
+    status = {
+        "WAITING_USER": "waiting_user",
+        "TRANSFERRED": "transferred",
+        "RESOLVED": "completed",
+        "CLOSED": "closed",
+    }.get(state_status.value if state_status is not None else "", "decision_ready")
+    handoff = (
+        ChatHandoff(
+            required=result.state.handoff.required,
+            summary=result.state.handoff.summary,
+        )
+        if result.state.handoff.required or result.state.handoff.summary
+        else None
+    )
     return ChatResponse(
         request_id=request_id,
         thread_id=thread_id,
+        status=status,
+        final_status=state_status.value if state_status is not None else None,
         understanding=understanding,
         decision=decision,
         trace=_trace(result),
+        final_reply=result.state.response.message,
+        evidence=[
+            ChatEvidence.model_validate(item.model_dump())
+            for item in result.state.evidence.items
+        ],
+        handoff=handoff,
     )
 
 
@@ -250,8 +286,14 @@ def create_app(
     ) -> ChatResponse:
         thread_id = payload.thread_id or str(uuid4())
         request.state.thread_id = thread_id
+        user_id = payload.source_context.get("user_id")
+        site_id = payload.source_context.get("site_id")
         state = OpsAgentState(
-            identity=IdentityState(source_context=payload.source_context),
+            identity=IdentityState(
+                user_id=user_id if isinstance(user_id, str) else None,
+                site_id=site_id if isinstance(site_id, str) else None,
+                source_context=payload.source_context,
+            ),
             conversation={
                 "thread_id": thread_id,
                 "original_query": payload.message,

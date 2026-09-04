@@ -1,6 +1,6 @@
 # OpsMind Architecture — V0.1
 
-Status: Baseline  
+Status: TASK-P1-006 proposal — PM architecture gate required
 Architecture style: Model-first Agent + deterministic harness  
 Primary Agent runtime: LangGraph  
 Business environment: Fully synthetic manufacturing IT environment
@@ -328,13 +328,14 @@ This reduces context growth and allows later evidence inspection.
 
 # 8. Tool architecture
 
-V0.1 capabilities:
+TASK-P1-006 implements only these synthetic V0.1 read-only capabilities:
 
-- `knowledge_search`
 - `work_order_query`
 - `permission_query`
-- `log_search`
 - `incident_query`
+
+`knowledge_search` and `log_search` remain future capabilities and are not
+registered by this task.
 
 Every tool has a typed contract:
 
@@ -446,6 +447,11 @@ The harness must enforce:
 
 The model should receive action history and current evidence so that it can reason about whether additional work is necessary.
 
+The current in-memory graph enforces the limits in `LoopState`, takes the
+minimum of the state and per-tool timeout, and rejects a repeated successful
+tool signature within one run.  It does not persist checkpoints or resume a
+thread.
+
 The harness enforces limits; the model performs the business judgment.
 
 ---
@@ -491,9 +497,9 @@ The Agent Kernel is considered viable only when it reliably handles:
 - C11 privileged change request;
 - C12 continued unresolved conversation.
 
-Do not hardcode these cases.
-
-They are eval fixtures, not runtime branches.
+Do not hardcode these cases.  D01–D03 from Issue #16 and the existing Golden
+Cases are eval fixtures, not runtime branches.  The model selects tools from
+the registry for any supported input; unknown records are typed `not_found`.
 
 ---
 

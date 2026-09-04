@@ -1,4 +1,4 @@
-"""Minimal model-driven Agent kernel for OpsMind."""
+"""Model-driven OpsMind Agent loop and typed node contracts."""
 
 from opsmind.agent.context import (
     DecisionContext,
@@ -6,40 +6,103 @@ from opsmind.agent.context import (
     DecisionLoopContext,
     DecisionTaskContext,
     EvidenceSummaryContext,
+    ResponseContext,
+    ToolIdentityContext,
+    ToolReviewContext,
+    ToolSelectionContext,
     UnderstandingContext,
     build_decision_context,
+    build_response_context,
+    build_tool_review_context,
+    build_tool_selection_context,
     build_understanding_context,
 )
 from opsmind.agent.errors import AgentError, AgentInputError
-from opsmind.agent.graph import build_ops_graph, run_ops_agent
-from opsmind.agent.nodes import decide_action, understand_request
+from opsmind.agent.graph import (
+    AgentTraceEvent,
+    build_ops_graph,
+    run_ops_agent,
+    run_ops_agent_with_trace,
+)
+from opsmind.agent.nodes import (
+    decide_action,
+    generate_clarification,
+    generate_handoff,
+    generate_response,
+    review_tool_result,
+    select_tool,
+    understand_request,
+)
 from opsmind.agent.prompts import (
     ACTION_DECISION_PROMPT,
     ACTION_DECISION_SYSTEM_PROMPT,
+    CLARIFICATION_PROMPT,
+    CLARIFICATION_SYSTEM_PROMPT,
+    HANDOFF_GENERATION_PROMPT,
+    HANDOFF_GENERATION_SYSTEM_PROMPT,
     REQUEST_UNDERSTANDING_PROMPT,
     REQUEST_UNDERSTANDING_SYSTEM_PROMPT,
+    RESPONSE_GENERATION_PROMPT,
+    RESPONSE_GENERATION_SYSTEM_PROMPT,
+    TOOL_RESULT_REVIEW_PROMPT,
+    TOOL_RESULT_REVIEW_SYSTEM_PROMPT,
+    TOOL_SELECTION_PROMPT,
+    TOOL_SELECTION_SYSTEM_PROMPT,
+    language_instruction,
 )
-from opsmind.agent.schemas import ActionDecisionOutput, RequestUnderstandingOutput
+from opsmind.agent.schemas import (
+    ActionDecisionOutput,
+    RequestUnderstandingOutput,
+    ToolResultReviewOutput,
+    ToolSelectionOutput,
+)
 
 __all__ = [
     "ActionDecisionOutput",
     "AgentError",
     "AgentInputError",
+    "AgentTraceEvent",
     "ACTION_DECISION_PROMPT",
     "ACTION_DECISION_SYSTEM_PROMPT",
+    "CLARIFICATION_PROMPT",
+    "CLARIFICATION_SYSTEM_PROMPT",
     "DecisionContext",
     "DecisionFactsContext",
     "DecisionLoopContext",
     "DecisionTaskContext",
     "EvidenceSummaryContext",
-    "RequestUnderstandingOutput",
+    "HANDOFF_GENERATION_PROMPT",
+    "HANDOFF_GENERATION_SYSTEM_PROMPT",
     "REQUEST_UNDERSTANDING_PROMPT",
     "REQUEST_UNDERSTANDING_SYSTEM_PROMPT",
+    "RequestUnderstandingOutput",
+    "RESPONSE_GENERATION_PROMPT",
+    "RESPONSE_GENERATION_SYSTEM_PROMPT",
+    "ResponseContext",
+    "TOOL_RESULT_REVIEW_PROMPT",
+    "TOOL_RESULT_REVIEW_SYSTEM_PROMPT",
+    "TOOL_SELECTION_PROMPT",
+    "TOOL_SELECTION_SYSTEM_PROMPT",
+    "ToolIdentityContext",
+    "ToolResultReviewOutput",
+    "ToolReviewContext",
+    "ToolSelectionContext",
+    "ToolSelectionOutput",
     "UnderstandingContext",
     "build_decision_context",
     "build_ops_graph",
+    "build_response_context",
+    "build_tool_review_context",
+    "build_tool_selection_context",
     "build_understanding_context",
     "decide_action",
+    "generate_clarification",
+    "generate_handoff",
+    "generate_response",
+    "language_instruction",
+    "review_tool_result",
     "run_ops_agent",
+    "run_ops_agent_with_trace",
+    "select_tool",
     "understand_request",
 ]

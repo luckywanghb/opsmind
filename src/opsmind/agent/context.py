@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+from typing import Any
 
 from pydantic import Field
 
 from opsmind.agent.errors import AgentInputError
 from opsmind.state import (
+    DecisionState,
     EvidenceItem,
     FactsState,
     FiniteJsonObject,
@@ -77,6 +79,47 @@ class DecisionContext(StateModel):
     facts: DecisionFactsContext
     evidence: list[EvidenceSummaryContext] = Field(default_factory=list)
     loop: DecisionLoopContext
+
+
+class ToolIdentityContext(StateModel):
+    """Identity fields that can help extract typed tool arguments."""
+
+    user_id: str | None = None
+    site_id: str | None = None
+
+
+class ToolSelectionContext(StateModel):
+    """Compact context visible to the model selecting a registered tool."""
+
+    current_query: str
+    understanding: UnderstandingState
+    decision: DecisionState
+    identity: ToolIdentityContext
+    evidence: list[EvidenceSummaryContext] = Field(default_factory=list)
+    available_tools: list[dict[str, Any]] = Field(default_factory=list)
+    loop: DecisionLoopContext
+
+
+class ToolReviewContext(StateModel):
+    """Typed result projection sent to the result-review model."""
+
+    current_query: str
+    selected_tool: str
+    arguments: FiniteJsonObject
+    result: FiniteJsonObject
+    error_code: str | None = None
+
+
+class ResponseContext(StateModel):
+    """Compact grounding context for final/clarification/handoff text."""
+
+    current_query: str
+    understanding: UnderstandingState
+    decision: DecisionState
+    facts: DecisionFactsContext
+    evidence: list[EvidenceSummaryContext] = Field(default_factory=list)
+    handoff_required: bool = False
+    safety_capability: str
 
 
 def _validated_state(state: OpsAgentState) -> OpsAgentState:
@@ -161,3 +204,83 @@ def build_decision_context(state: OpsAgentState) -> DecisionContext:
         evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
         loop=_loop_context(canonical_state.loop),
     )
+
+
+def build_tool_selection_context(
+    state: OpsAgentState,
+    available_tools: list[dict[str, Any]],
+) -> ToolSelectionContext:
+    """Project only fields required for generic model-driven tool selection."""
+
+    canonical_state = _validated_state(state)
+    query = _current_query(canonical_state)
+    identity = ToolIdentityContext(
+        user_id=canonical_state.identity.user_id,
+        site_id=canonical_state.identity.site_id,
+    )
+    return ToolSelectionContext(
+        current_query=query,
+        understanding=canonical_state.understanding.model_copy(deep=True),
+        decision=canonical_state.decision.model_copy(deep=True),
+        identity=identity,
+        evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
+        available_tools=deepcopy(available_tools),
+        loop=_loop_context(canonical_state.loop),
+    )
+
+
+def build_tool_review_context(
+    state: OpsAgentState,
+    *,
+    result: FiniteJsonObject,
+    error_code: str | None = None,
+) -> ToolReviewContext:
+    """Build a detached, typed result projection for one review call."""
+
+    canonical_state = _validated_state(state)
+    query = _current_query(canonical_state)
+    selected_tool = canonical_state.tool.selected_tool
+    if not selected_tool:
+        raise AgentInputError("tool.selected_tool is required for result review")
+    return ToolReviewContext(
+        current_query=query,
+        selected_tool=selected_tool,
+        arguments=deepcopy(canonical_state.tool.arguments),
+        result=deepcopy(result),
+        error_code=error_code,
+    )
+
+
+def build_response_context(state: OpsAgentState) -> ResponseContext:
+    """Build compact grounding context for user-facing text generation."""
+
+    canonical_state = _validated_state(state)
+    query = _current_query(canonical_state)
+    return ResponseContext(
+        current_query=query,
+        understanding=canonical_state.understanding.model_copy(deep=True),
+        decision=canonical_state.decision.model_copy(deep=True),
+        facts=_facts_context(canonical_state.facts),
+        evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
+        handoff_required=canonical_state.handoff.required,
+        safety_capability=canonical_state.safety.capability.value,
+    )
+
+
+__all__ = [
+    "DecisionContext",
+    "DecisionFactsContext",
+    "DecisionLoopContext",
+    "DecisionTaskContext",
+    "EvidenceSummaryContext",
+    "ResponseContext",
+    "ToolIdentityContext",
+    "ToolReviewContext",
+    "ToolSelectionContext",
+    "UnderstandingContext",
+    "build_decision_context",
+    "build_response_context",
+    "build_tool_review_context",
+    "build_tool_selection_context",
+    "build_understanding_context",
+]

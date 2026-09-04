@@ -26,17 +26,20 @@ safety boundaries.
 ## Current status
 
 - Phase 0 repository harness: complete
-- Phase 1 Agent Kernel: in progress
+- Phase 1 Agent Kernel and read-only tool loop: implementation complete;
+  independent test/review and PM architecture gate pending
 - TASK-001 repository foundation and typed state: complete
 - Minimal Agent kernel and DeepSeek provider integration: complete
 - HTTP runtime: `GET /api/v1/health` and `POST /api/v1/chat`
-- Runtime capability: `READ_ONLY`
+- Runtime capability: `READ_ONLY` (three synthetic typed query tools)
 - GitHub Issues and Pull Requests: development control plane
 - Delivery Reporter: required at meaningful task transitions
 
 The current implementation provides the validated V0.1 `OpsAgentState`, a
-provider-neutral Model Gateway, the two-node LangGraph kernel, and a typed
-FastAPI surface. Enterprise tools and persistence remain intentionally absent.
+provider-neutral Model Gateway, a bounded model-driven LangGraph loop, typed
+synthetic work-order/permission/incident queries, and a typed FastAPI surface.
+Persistence, RAG, authentication, and write actions remain intentionally
+absent.  D01–D03 are fixtures; the graph has no case-specific routing.
 
 ## Development
 
@@ -76,4 +79,5 @@ Architecture and development rules live in:
 - `docs/roles/DELIVERY_REPORTER.md`
 
 Completed task artifacts, including tester and reviewer results, are stored in
-`tasks/done/`.
+`tasks/done/`; the current Developer Report is staged at
+`tasks/review/TASK-P1-006-developer-report.md`.

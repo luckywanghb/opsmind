@@ -22,8 +22,22 @@ const requestTypes = new Set(["HOW_TO", "EXPLAIN", "DIAGNOSE", "CHECK_STATUS", "
 const riskSignals = new Set(["NONE", "PRIVILEGED_CHANGE", "BROAD_OUTAGE", "SECURITY_SUSPECTED", "DESTRUCTIVE_OPERATION"]);
 const agentActions = new Set(["ASK_USER", "SEARCH", "REPLY", "TRANSFER_HUMAN", "END_CONVERSATION"]);
 const modelTasks = new Set(["REQUEST_UNDERSTANDING", "ACTION_DECISION", "TOOL_SELECTION", "TOOL_RESULT_REVIEW", "CLARIFICATION", "RESPONSE_GENERATION", "HANDOFF_GENERATION"]);
-const modelProfiles = new Set(["CHEAP", "STRONG", "FALLBACK"]);
+const modelProfiles = new Set(["CHEAP", "STRONG", "FALLBACK", "HARNESS"]);
+const responseStatuses = new Set(["decision_ready", "completed", "waiting_user", "transferred", "closed"]);
+const traceStatuses = new Set(["completed", "failed", "blocked"]);
 const isNullableString = (value: unknown): value is string | null => value === null || typeof value === "string";
+const isOptionalNullableString = (value: unknown): boolean => value === undefined || isNullableString(value);
+
+function isEvidence(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.source === "string" &&
+    typeof value.summary === "string" &&
+    isObject(value.key_fields) &&
+    isNullableString(value.artifact_ref) &&
+    typeof value.timestamp === "string"
+  );
+}
 
 function isChatResponse(value: unknown): value is ChatResponse {
   if (!isObject(value) || !isObject(value.understanding) || !isObject(value.decision)) return false;
@@ -31,7 +45,7 @@ function isChatResponse(value: unknown): value is ChatResponse {
   return (
     typeof value.request_id === "string" &&
     typeof value.thread_id === "string" &&
-    value.status === "decision_ready" &&
+    responseStatuses.has(String(value.status)) &&
     primaryIntents.has(String(value.understanding.primary_intent)) &&
     requestTypes.has(String(value.understanding.request_type)) &&
     isNullableString(value.understanding.symptom) &&
@@ -41,13 +55,17 @@ function isChatResponse(value: unknown): value is ChatResponse {
     agentActions.has(String(value.decision.action)) &&
     typeof value.decision.goal === "string" &&
     typeof value.decision.rationale === "string" &&
+    isOptionalNullableString(value.final_status) &&
+    isOptionalNullableString(value.final_reply) &&
+    (value.evidence === undefined || (Array.isArray(value.evidence) && value.evidence.every(isEvidence))) &&
+    (value.handoff === undefined || value.handoff === null || (isObject(value.handoff) && typeof value.handoff.required === "boolean" && isNullableString(value.handoff.summary))) &&
     Array.isArray(trace) &&
     trace.every((entry) =>
       isObject(entry) &&
       typeof entry.node === "string" &&
       modelTasks.has(String(entry.task)) &&
       modelProfiles.has(String(entry.profile)) &&
-      entry.status === "completed" &&
+      traceStatuses.has(String(entry.status)) &&
       typeof entry.summary === "string"
     )
   );

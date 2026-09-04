@@ -5,7 +5,10 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from opsmind.agent.context import build_understanding_context
-from opsmind.agent.prompts import REQUEST_UNDERSTANDING_SYSTEM_PROMPT
+from opsmind.agent.prompts import (
+    REQUEST_UNDERSTANDING_SYSTEM_PROMPT,
+    language_instruction,
+)
 from opsmind.agent.schemas import RequestUnderstandingOutput
 from opsmind.models import (
     ModelGateway,
@@ -33,7 +36,10 @@ async def understand_request(
         messages=[
             ModelMessage(
                 role=ModelRole.SYSTEM,
-                content=REQUEST_UNDERSTANDING_SYSTEM_PROMPT,
+                content=(
+                    f"{REQUEST_UNDERSTANDING_SYSTEM_PROMPT}\n"
+                    f"{language_instruction(canonical_state.conversation.current_query)}"
+                ),
             ),
             ModelMessage(
                 role=ModelRole.USER,

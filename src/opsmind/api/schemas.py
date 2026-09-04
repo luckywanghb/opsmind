@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 from unicodedata import category
 
@@ -75,24 +76,52 @@ class ChatDecision(ApiModel):
 
 
 class AgentTraceStep(ApiModel):
-    """Safe summary of one actually completed model-backed Agent node."""
+    """Safe summary of one actual model or harness execution step."""
 
     node: str
     task: ModelTask
-    profile: ModelProfile
-    status: Literal["completed"] = "completed"
+    profile: ModelProfile | Literal["HARNESS"]
+    status: Literal["completed", "failed", "blocked"] = "completed"
     summary: str
 
 
+class ChatEvidence(ApiModel):
+    """Compact evidence exposed to the UI without raw adapter payloads."""
+
+    source: str
+    summary: str
+    key_fields: FiniteJsonObject = Field(default_factory=dict)
+    metadata: FiniteJsonObject = Field(default_factory=dict)
+    artifact_ref: str | None = None
+    timestamp: datetime
+
+
+class ChatHandoff(ApiModel):
+    """Safe human-handoff outcome."""
+
+    required: bool
+    summary: str | None = None
+
+
 class ChatResponse(ApiModel):
-    """Successful response from one complete two-node kernel run."""
+    """Successful response from one bounded Agent-loop run."""
 
     request_id: str
     thread_id: str
-    status: Literal["decision_ready"] = "decision_ready"
+    status: Literal[
+        "decision_ready",
+        "completed",
+        "waiting_user",
+        "transferred",
+        "closed",
+    ] = "decision_ready"
+    final_status: str | None = None
     understanding: ChatUnderstanding
     decision: ChatDecision
     trace: list[AgentTraceStep]
+    final_reply: str | None = None
+    evidence: list[ChatEvidence] = Field(default_factory=list)
+    handoff: ChatHandoff | None = None
 
 
 class HealthResponse(ApiModel):

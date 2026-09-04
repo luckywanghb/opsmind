@@ -314,6 +314,13 @@ class ToolState(StateModel):
     selected_tool: str | None = None
     arguments: FiniteJsonObject = Field(default_factory=dict)
     expected_resolution: str | None = None
+    # Result-review fields are compact model output only.  Raw adapter output
+    # stays transient between execute_tool and review_tool_result nodes.
+    review_summary: str | None = None
+    evidence_sufficient: bool | None = None
+    recommended_action: AgentAction | None = None
+    last_result_status: str | None = None
+    last_error_code: str | None = None
 
 
 class SafetyState(StateModel):

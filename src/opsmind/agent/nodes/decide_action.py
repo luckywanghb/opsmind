@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from opsmind.agent.context import build_decision_context
-from opsmind.agent.prompts import ACTION_DECISION_SYSTEM_PROMPT
+from opsmind.agent.prompts import ACTION_DECISION_SYSTEM_PROMPT, language_instruction
 from opsmind.agent.schemas import ActionDecisionOutput
 from opsmind.models import (
     ModelGateway,
@@ -33,7 +33,10 @@ async def decide_action(
         messages=[
             ModelMessage(
                 role=ModelRole.SYSTEM,
-                content=ACTION_DECISION_SYSTEM_PROMPT,
+                content=(
+                    f"{ACTION_DECISION_SYSTEM_PROMPT}\n"
+                    f"{language_instruction(canonical_state.conversation.current_query)}"
+                ),
             ),
             ModelMessage(
                 role=ModelRole.USER,

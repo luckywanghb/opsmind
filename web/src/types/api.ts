@@ -43,7 +43,7 @@ export type ModelProfile = "CHEAP" | "STRONG" | "FALLBACK";
 export interface ChatRequest {
   message: string;
   thread_id?: string;
-  source_context: { channel: "web-demo" };
+  source_context: { channel: "web-demo"; user_id?: string; site_id?: string };
 }
 
 export interface RequestUnderstanding {
@@ -64,18 +64,36 @@ export interface ActionDecision {
 export interface TraceEntry {
   node: string;
   task: ModelTask;
-  profile: ModelProfile;
-  status: "completed";
+  profile: ModelProfile | "HARNESS";
+  status: "completed" | "failed" | "blocked";
   summary: string;
+}
+
+export interface ChatEvidence {
+  source: string;
+  summary: string;
+  key_fields: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  artifact_ref: string | null;
+  timestamp: string;
+}
+
+export interface ChatHandoff {
+  required: boolean;
+  summary: string | null;
 }
 
 export interface ChatResponse {
   request_id: string;
   thread_id: string;
-  status: "decision_ready";
+  status: "decision_ready" | "completed" | "waiting_user" | "transferred" | "closed";
+  final_status?: string | null;
   understanding: RequestUnderstanding;
   decision: ActionDecision;
   trace: TraceEntry[];
+  final_reply?: string | null;
+  evidence?: ChatEvidence[];
+  handoff?: ChatHandoff | null;
 }
 
 export interface ApiErrorEnvelope {

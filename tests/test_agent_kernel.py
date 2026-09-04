@@ -76,34 +76,86 @@ def decision_response(**overrides: object) -> dict[str, object]:
     return response
 
 
+def selection_response(**overrides: object) -> dict[str, object]:
+    response: dict[str, object] = {
+        "selected_tool": "work_order_query",
+        "arguments": {"work_order_id": "WO20260001"},
+        "expected_resolution": "确认当前工单节点",
+    }
+    response.update(overrides)
+    return response
+
+
+def review_response(**overrides: object) -> dict[str, object]:
+    response: dict[str, object] = {
+        "evidence_sufficient": True,
+        "summary": "已确认当前工单状态。",
+        "confirmed_facts": ["工单正在审批"],
+        "unresolved_questions": [],
+        "recommended_action": "REPLY",
+    }
+    response.update(overrides)
+    return response
+
+
+def final_decision_response() -> dict[str, object]:
+    return decision_response(
+        action="REPLY",
+        goal="基于证据回复",
+        rationale="证据已足够",
+    )
+
+
 def initial_state(**conversation: object) -> OpsAgentState:
     values: dict[str, object] = {"current_query": "WO20260001为什么一直没处理？"}
     values.update(conversation)
     return OpsAgentState(conversation=values)
 
 
-def test_graph_compiles_with_only_the_required_linear_topology() -> None:
+def test_graph_compiles_with_the_bounded_read_only_loop_topology() -> None:
     compiled = build_ops_graph(gateway(MockModelProvider()))
     graph = compiled.get_graph()
 
-    assert set(graph.nodes) == {
+    assert {
         "__start__",
         "understand_request",
         "decide_action",
+        "select_tool",
+        "execute_tool",
+        "review_tool_result",
+        "generate_clarification",
+        "generate_response",
+        "generate_handoff",
+        "runtime_limit",
+        "close_conversation",
         "__end__",
-    }
+    } == set(graph.nodes)
+    edges = {(edge.source, edge.target) for edge in graph.edges}
     assert {
-        (edge.source, edge.target, edge.conditional) for edge in graph.edges
-    } == {
-        ("__start__", "understand_request", False),
-        ("understand_request", "decide_action", False),
-        ("decide_action", "__end__", False),
-    }
+        ("__start__", "understand_request"),
+        ("understand_request", "decide_action"),
+        ("decide_action", "select_tool"),
+        ("select_tool", "execute_tool"),
+        ("execute_tool", "review_tool_result"),
+        ("review_tool_result", "decide_action"),
+        ("decide_action", "generate_clarification"),
+        ("decide_action", "generate_response"),
+        ("decide_action", "generate_handoff"),
+        ("decide_action", "close_conversation"),
+        ("runtime_limit", "generate_handoff"),
+    } <= edges
 
 
-def test_happy_path_returns_typed_state_and_two_model_calls() -> None:
+def test_happy_path_returns_typed_state_and_completes_the_tool_loop() -> None:
     provider = MockModelProvider(
-        structured_responses=[understanding_response(), decision_response()]
+        structured_responses=[
+            understanding_response(),
+            decision_response(),
+            selection_response(),
+            review_response(),
+            final_decision_response(),
+        ],
+        responses=["工单正在审批。"],
     )
 
     result = run_async(run_ops_agent(initial_state(), gateway(provider)))
@@ -112,14 +164,22 @@ def test_happy_path_returns_typed_state_and_two_model_calls() -> None:
     assert result.understanding.primary_intent is PrimaryIntent.WORKFLOW_ISSUE
     assert result.understanding.request_type is RequestType.CHECK_STATUS
     assert result.understanding.entities["work_order_id"] == "WO20260001"
-    assert result.decision.action is AgentAction.SEARCH
-    assert result.decision.goal == "查询当前工单节点"
-    assert provider.invocation_count == 2
+    assert result.decision.action is AgentAction.REPLY
+    assert result.tool.selected_tool == "work_order_query"
+    assert result.response.message == "工单正在审批。"
+    assert provider.invocation_count == 6
 
 
 def test_model_calls_use_expected_task_order_and_cheap_profile() -> None:
     provider = MockModelProvider(
-        structured_responses=[understanding_response(), decision_response()]
+        structured_responses=[
+            understanding_response(),
+            decision_response(),
+            selection_response(),
+            review_response(),
+            final_decision_response(),
+        ],
+        responses=["工单正在审批。"],
     )
 
     run_async(run_ops_agent(initial_state(), gateway(provider)))
@@ -127,20 +187,34 @@ def test_model_calls_use_expected_task_order_and_cheap_profile() -> None:
     assert [invocation.task for invocation in provider.history] == [
         ModelTask.REQUEST_UNDERSTANDING,
         ModelTask.ACTION_DECISION,
+        ModelTask.TOOL_SELECTION,
+        ModelTask.TOOL_RESULT_REVIEW,
+        ModelTask.ACTION_DECISION,
+        ModelTask.RESPONSE_GENERATION,
     ]
-    assert [invocation.profile for invocation in provider.history] == [
-        ModelProfile.CHEAP,
-        ModelProfile.CHEAP,
-    ]
+    assert all(
+        invocation.profile is ModelProfile.CHEAP for invocation in provider.history
+    )
     assert [invocation.request.metadata["node"] for invocation in provider.history] == [
         "understand_request",
         "decide_action",
+        "select_tool",
+        "review_tool_result",
+        "decide_action",
+        "generate_response",
     ]
 
 
 def test_decision_context_contains_the_first_node_update() -> None:
     provider = MockModelProvider(
-        structured_responses=[understanding_response(), decision_response()]
+        structured_responses=[
+            understanding_response(),
+            decision_response(),
+            selection_response(),
+            review_response(),
+            final_decision_response(),
+        ],
+        responses=["工单正在审批。"],
     )
 
     run_async(run_ops_agent(initial_state(), gateway(provider)))
@@ -222,7 +296,14 @@ def test_missing_or_whitespace_query_fails_before_gateway_call(
     query: str | None,
 ) -> None:
     provider = MockModelProvider(
-        structured_responses=[understanding_response(), decision_response()]
+        structured_responses=[
+            understanding_response(),
+            decision_response(),
+            selection_response(),
+            review_response(),
+            final_decision_response(),
+        ],
+        responses=["工单正在审批。"],
     )
     state = OpsAgentState(conversation={"current_query": query})
 
@@ -327,7 +408,14 @@ def test_second_gateway_invocation_error_propagates_after_valid_first_node() -> 
 
 def test_run_does_not_mutate_input_or_leak_nested_mutations() -> None:
     provider = MockModelProvider(
-        structured_responses=[understanding_response(), decision_response()]
+        structured_responses=[
+            understanding_response(),
+            decision_response(),
+            selection_response(),
+            review_response(),
+            final_decision_response(),
+        ],
+        responses=["工单正在审批。"],
     )
     state = initial_state()
     before = state.model_copy(deep=True)

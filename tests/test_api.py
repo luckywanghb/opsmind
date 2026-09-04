@@ -55,11 +55,40 @@ def _decision() -> ActionDecisionOutput:
     )
 
 
+def _reply_decision() -> ActionDecisionOutput:
+    return ActionDecisionOutput(
+        action=AgentAction.REPLY,
+        goal="已获得足够信息，可以回复",
+        rationale="当前请求不需要额外工具查询",
+    )
+
+
+def _selection() -> dict[str, object]:
+    return {
+        "selected_tool": "work_order_query",
+        "arguments": {"work_order_id": "WO-42"},
+        "expected_resolution": "确认当前状态",
+    }
+
+
+def _review() -> dict[str, object]:
+    return {
+        "evidence_sufficient": True,
+        "summary": "已确认当前状态。",
+        "confirmed_facts": ["状态已确认"],
+        "unresolved_questions": [],
+        "recommended_action": "REPLY",
+    }
+
+
 def _runtime(
     responses: Iterable[object] | None = None,
 ) -> tuple[OpsAgentRuntime, MockModelProvider]:
     provider = MockModelProvider(
-        structured_responses=list(responses or [_understanding(), _decision()])
+        structured_responses=list(
+            responses or [_understanding(), _reply_decision()]
+        ),
+        responses=["已根据当前可确认信息完成回复。"],
     )
     gateway = ModelGateway(
         routes={
@@ -101,7 +130,15 @@ def test_health_is_provider_independent() -> None:
 
 
 def test_chat_runs_canonical_kernel_and_returns_safe_actual_trace() -> None:
-    client, provider = _client()
+    client, provider = _client(
+        [
+            _understanding(),
+            _decision(),
+            _selection(),
+            _review(),
+            _reply_decision(),
+        ]
+    )
     payload = {
         "message": "Why is WO-42 still waiting?",
         "thread_id": "plant-thread-7",
@@ -114,9 +151,11 @@ def test_chat_runs_canonical_kernel_and_returns_safe_actual_trace() -> None:
     body = response.json()
     assert body["request_id"] == response.headers["X-Request-ID"]
     assert body["thread_id"] == "plant-thread-7"
-    assert body["status"] == "decision_ready"
+    assert body["status"] == "completed"
+    assert body["final_status"] == "RESOLVED"
+    assert body["final_reply"] == "已根据当前可确认信息完成回复。"
     assert body["understanding"] == _understanding().model_dump(mode="json")
-    assert body["decision"] == _decision().model_dump(mode="json")
+    assert body["decision"] == _reply_decision().model_dump(mode="json")
     assert body["trace"] == [
         {
             "node": "understand_request",
@@ -132,11 +171,51 @@ def test_chat_runs_canonical_kernel_and_returns_safe_actual_trace() -> None:
             "status": "completed",
             "summary": "SEARCH: Inspect the current approval state",
         },
+        {
+            "node": "select_tool",
+            "task": "TOOL_SELECTION",
+            "profile": "CHEAP",
+            "status": "completed",
+            "summary": "work_order_query",
+        },
+        {
+            "node": "execute_tool",
+            "task": "TOOL_SELECTION",
+            "profile": "HARNESS",
+            "status": "completed",
+            "summary": "work_order_query: not_found",
+        },
+        {
+            "node": "review_tool_result",
+            "task": "TOOL_RESULT_REVIEW",
+            "profile": "CHEAP",
+            "status": "completed",
+            "summary": "已确认当前状态。",
+        },
+        {
+            "node": "decide_action",
+            "task": "ACTION_DECISION",
+            "profile": "CHEAP",
+            "status": "completed",
+            "summary": "REPLY: 已获得足够信息，可以回复",
+        },
+        {
+            "node": "generate_response",
+            "task": "RESPONSE_GENERATION",
+            "profile": "CHEAP",
+            "status": "completed",
+            "summary": "final response generated",
+        },
     ]
-    assert provider.invocation_count == 2
+    assert body["evidence"][0]["source"] == "work_order_query"
+    assert provider.invocation_count == 6
     assert [call.task for call in provider.history] == [
         ModelTask.REQUEST_UNDERSTANDING,
         ModelTask.ACTION_DECISION,
+        ModelTask.TOOL_SELECTION,
+        ModelTask.TOOL_RESULT_REVIEW,
+        ModelTask.ACTION_DECISION,
+        ModelTask.RESPONSE_GENERATION,
     ]
 
     understanding_context = json.loads(provider.history[0].messages[1].content)
@@ -345,6 +424,7 @@ def test_default_mock_runtime_is_reusable() -> None:
     assert [step["node"] for step in first.json()["trace"]] == [
         "understand_request",
         "decide_action",
+        "close_conversation",
     ]
 
 
@@ -372,4 +452,4 @@ async def test_concurrent_requests_keep_request_thread_and_trace_isolated() -> N
     assert first_body["thread_id"] == "thread-first"
     assert second_body["thread_id"] == "thread-second"
     assert first_body["request_id"] != second_body["request_id"]
-    assert len(first_body["trace"]) == len(second_body["trace"]) == 2
+    assert len(first_body["trace"]) == len(second_body["trace"]) == 3

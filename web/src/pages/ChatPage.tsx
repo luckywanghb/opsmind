@@ -22,8 +22,8 @@ function Understanding({ response }: { response: ChatResponse }) {
   const u = response.understanding;
   const entities = Object.entries(u.entities);
   return (
-    <section className="result-block" aria-label="Request Understanding">
-      <div className="result-block__heading"><span>01</span><div><h3>Request Understanding</h3><p>请求理解</p></div></div>
+    <section className="result-block" aria-label="请求理解">
+      <div className="result-block__heading"><span>01</span><div><h3>请求理解</h3><p>Request Understanding</p></div></div>
       <dl className="data-grid">
         <div><dt>主要意图</dt><dd>{u.primary_intent}</dd></div>
         <div><dt>请求类型</dt><dd>{u.request_type}</dd></div>
@@ -38,11 +38,25 @@ function Understanding({ response }: { response: ChatResponse }) {
 
 function Decision({ response }: { response: ChatResponse }) {
   return (
-    <section className="result-block" aria-label="Action Decision">
-      <div className="result-block__heading"><span>02</span><div><h3>Action Decision</h3><p>动作决策</p></div></div>
+    <section className="result-block" aria-label="动作决策">
+      <div className="result-block__heading"><span>02</span><div><h3>动作决策</h3><p>Action Decision</p></div></div>
       <div className="decision-line"><span>下一步动作</span><ActionBadge action={response.decision.action} /></div>
       <dl className="decision-copy"><div><dt>目标</dt><dd>{response.decision.goal}</dd></div><div><dt>决策摘要</dt><dd>{response.decision.rationale}</dd></div></dl>
-      <p className="phase-note"><Icon name="check" /> 当前运行阶段已完成动作决策。Tool 与最终回复能力尚未接入。</p>
+      <p className="phase-note"><Icon name="check" /> 当前运行已完成动作决策，后续节点以右侧实际 trace 为准。</p>
+    </section>
+  );
+}
+
+function FinalResult({ response }: { response: ChatResponse }) {
+  const hasEvidence = (response.evidence?.length ?? 0) > 0;
+  const handoff = response.handoff?.required;
+  if (!response.final_reply && !hasEvidence && !handoff) return null;
+  return (
+    <section className="result-block result-block--final" aria-label="结果与回复">
+      <div className="result-block__heading"><span>03</span><div><h3>结果与回复</h3><p>Result & Reply</p></div></div>
+      {response.final_reply && <p className="final-reply">{response.final_reply}</p>}
+      {handoff && <p className="handoff-note">需要转人工继续处理。</p>}
+      {hasEvidence && <div className="evidence-list"><span className="evidence-list__label">已复核证据</span>{response.evidence?.map((item, index) => <div key={`${item.source}-${index}`}><code>{item.source}</code><p>{item.summary}</p></div>)}</div>}
     </section>
   );
 }
@@ -106,7 +120,7 @@ export function ChatPage() {
           ) : exchanges.map((exchange, index) => (
             <div className="exchange" key={`${exchange.message}-${index}`}>
               <div className="user-message"><span>你</span><p>{exchange.message}</p></div>
-              {exchange.response && <div className="agent-response"><div className="agent-response__intro"><span className="mini-mark"><Icon name="bot" /></span><div><strong>已完成请求理解</strong><p>以下内容来自本次真实 Agent Kernel 响应。</p></div></div><Understanding response={exchange.response} /><Decision response={exchange.response} /><small className="request-id">Request ID · {exchange.response.request_id}</small></div>}
+              {exchange.response && <div className="agent-response"><div className="agent-response__intro"><span className="mini-mark"><Icon name="bot" /></span><div><strong>{exchange.response.status === "completed" ? "已完成请求" : "已完成请求分析"}</strong><p>以下内容来自本次真实 Agent 运行。</p></div></div><Understanding response={exchange.response} /><Decision response={exchange.response} /><FinalResult response={exchange.response} /><small className="request-id">Request ID · {exchange.response.request_id}</small></div>}
               {exchange.error && <ChatErrorState {...exchange.error} onRetry={() => runSubmit(exchange.message)} />}
             </div>
           ))}

@@ -167,24 +167,25 @@ def test_graph_preserves_rich_canonical_state_while_replacing_only_node_sections
     )
     before = state.model_copy(deep=True)
     provider = MockModelProvider(
-        structured_responses=[understanding_response(), decision_response()]
+        structured_responses=[
+            understanding_response(),
+            decision_response(action="REPLY"),
+        ],
+        responses=["已完成回复。"],
     )
 
     result = run_async(run_ops_agent(state, make_gateway(provider)))
 
     assert result.understanding.primary_intent is PrimaryIntent.WORKFLOW_ISSUE
-    assert result.decision.action is AgentAction.SEARCH
+    assert result.decision.action is AgentAction.REPLY
     for field in (
         "identity",
         "conversation",
-        "task",
-        "loop",
         "facts",
         "evidence",
         "tool",
         "safety",
         "handoff",
-        "response",
     ):
         assert getattr(result, field) == getattr(before, field)
     assert result.understanding != before.understanding
@@ -384,8 +385,9 @@ def test_explicit_null_nullable_fields_are_accepted_and_preserved() -> None:
     provider = MockModelProvider(
         structured_responses=[
             understanding_response(symptom=None, uncertainty=None),
-            decision_response(),
-        ]
+            decision_response(action="REPLY"),
+        ],
+        responses=["已完成回复。"],
     )
     state = state_for()
     before = state.model_copy(deep=True)
@@ -396,7 +398,7 @@ def test_explicit_null_nullable_fields_are_accepted_and_preserved() -> None:
     assert result.understanding.uncertainty is None
     assert result.understanding.risk_signal is RiskSignal.NONE
     assert state == before
-    assert provider.invocation_count == 2
+    assert provider.invocation_count == 3
 
 
 def test_null_risk_signal_is_rejected_instead_of_synthesizing_none() -> None:
@@ -568,7 +570,8 @@ def test_two_concurrent_runs_with_one_shared_mock_provider_keep_query_state_isol
             understanding_response(entities={"run": "two"}),
             decision_response(action="REPLY"),
             decision_response(action="REPLY"),
-        ]
+        ],
+        responses=["第一个回复。", "第二个回复。"],
     )
     gateway = make_gateway(provider)
     first_state = state_for("query-one")
@@ -590,7 +593,7 @@ def test_two_concurrent_runs_with_one_shared_mock_provider_keep_query_state_isol
     assert second_result.decision.action is AgentAction.REPLY
     assert first_state == state_for("query-one")
     assert second_state == state_for("query-two")
-    assert provider.invocation_count == 4
+    assert provider.invocation_count == 6
     assert [invocation.task for invocation in provider.history].count(
         ModelTask.REQUEST_UNDERSTANDING
     ) == 2
