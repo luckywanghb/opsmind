@@ -1,14 +1,13 @@
 # OpsMind HTTP API
 
-Status: Phase 1 runtime surface
+Status: Phase 1 read-only Agent loop
 
-The API exposes the existing two-node Agent kernel over HTTP. It does not add
-persistence, tools, retrieval, streaming, or final-response generation.
+The API maps one request into the canonical `OpsAgentState`, runs the bounded
+model-driven loop, and returns the terminal outcome plus an actual safe trace.
 
 ## Run locally
 
-The default provider selector is the reusable deterministic mock runtime. It
-is offline and intended for tests and local contract demonstrations:
+The default provider selector is the deterministic mock runtime:
 
 ```bash
 OPSMIND_MODEL_PROVIDER=mock uv run --frozen uvicorn opsmind.api.app:create_app --factory
@@ -22,105 +21,140 @@ OPSMIND_MODEL_PROVIDER=deepseek uv run --frozen uvicorn opsmind.api.app:create_a
 ```
 
 If DeepSeek is selected without valid configuration, application construction
-fails explicitly. The runtime never falls back to mock.
-
-The interactive OpenAPI document is available at `/docs` while the server is
-running.
+fails explicitly.  The runtime never silently falls back to mock.  Interactive
+OpenAPI is available at `/docs`.
 
 ## Health
 
-`GET /api/v1/health` checks only that the HTTP process can serve a request. It
-does not call or probe a model provider.
+`GET /api/v1/health` checks only that the HTTP process can serve a request; it
+does not call a provider.
 
 ```json
-{
-  "status": "ok",
-  "service": "opsmind"
-}
+{"status": "ok", "service": "opsmind"}
 ```
 
-Every response also carries an `X-Request-ID` header.
+Every response carries an `X-Request-ID` header.
 
 ## Chat
 
-`POST /api/v1/chat` accepts one message and performs exactly this boundary
-flow:
+`POST /api/v1/chat` accepts one message and performs:
 
 ```text
-ChatRequest → OpsAgentState → run_ops_agent → ChatResponse
+ChatRequest → OpsAgentState → bounded Agent loop → ChatResponse
 ```
 
 Example request:
 
 ```json
 {
-  "message": "Why is work order WO-42 still waiting?",
+  "message": "WO20260001为什么一直没处理？",
   "thread_id": "plant-thread-7",
   "source_context": {
     "channel": "portal",
-    "site": "synthetic-plant-a"
+    "user_id": "U10023",
+    "site_id": "星川基地"
   }
 }
 ```
 
 `message` must contain non-whitespace text and is limited to 8,000 characters.
 `thread_id` is optional, need not be a UUID, and is limited to 128 characters;
-the server generates a UUID when it is omitted. `source_context` must be a
-finite JSON object. Undeclared request fields are rejected.
+the server generates a UUID when omitted.  `source_context` is a finite JSON
+object.  Explicit `user_id` and `site_id` values are copied into synthetic
+identity state; the runtime does not silently assume an authenticated user.
+Undeclared request fields are rejected.
 
-The message maps to both `conversation.original_query` and
-`conversation.current_query`. The thread ID maps to
-`conversation.thread_id`, and source context maps to
-`identity.source_context`. The API invokes the canonical `run_ops_agent`
-entry point rather than calling individual nodes.
+Successful responses include:
 
-Example response shape:
+- `request_id` and `thread_id`;
+- `status`: `completed`, `waiting_user`, `transferred`, `closed`, or the
+  intermediate-compatible `decision_ready` value;
+- validated `understanding` and latest model `decision`;
+- `final_status`, a deterministic grounded `final_reply`, compact `evidence`
+  with stable per-run IDs, and optional `handoff`;
+- `trace`, containing only actual completed/failed/blocked model or harness
+  steps with deterministic action/status summaries. The `decision.goal` and
+  `decision.rationale` fields remain typed control-plane diagnostics; they are
+  not evidence and are not used to render the final reply.
+
+Example terminal response shape:
 
 ```json
 {
   "request_id": "48ff5437-38f4-41b0-9c01-28e3a03ada40",
   "thread_id": "plant-thread-7",
-  "status": "decision_ready",
+  "status": "completed",
+  "final_status": "RESOLVED",
   "understanding": {
     "primary_intent": "WORKFLOW_ISSUE",
     "request_type": "DIAGNOSE",
-    "symptom": "Work order is waiting for approval",
-    "entities": {"work_order": "WO-42"},
+    "symptom": "工单正在审批",
+    "entities": {"work_order_id": "WO20260001"},
     "risk_signal": "NONE",
     "uncertainty": null
   },
   "decision": {
-    "action": "SEARCH",
-    "goal": "Inspect the current approval state",
-    "rationale": "The current node is needed before explaining the delay"
+    "action": "REPLY",
+    "goal": "基于复核证据回复",
+    "rationale": "证据已足够"
   },
-  "trace": [
+  "final_reply": "来源 work_order_query：状态=APPROVING；来源 work_order_query：当前节点=设备主管审批；来源 work_order_query：当前处理人=U10108；来源 work_order_query：已等待=4 小时；来源 work_order_query：源异常标记=false；当前来源未提供原因、SLA 或阈值字段，无法据此得出未返回的业务结论。",
+  "evidence": [
     {
-      "node": "understand_request",
-      "task": "REQUEST_UNDERSTANDING",
-      "profile": "CHEAP",
-      "status": "completed",
-      "summary": "WORKFLOW_ISSUE / DIAGNOSE"
-    },
-    {
-      "node": "decide_action",
-      "task": "ACTION_DECISION",
-      "profile": "CHEAP",
-      "status": "completed",
-      "summary": "SEARCH: Inspect the current approval state"
+      "evidence_id": "E1",
+      "source": "work_order_query",
+      "summary": "work_order_query: found",
+      "key_fields": {
+        "status": "APPROVING",
+        "current_node": "设备主管审批",
+        "current_handler": "U10108",
+        "waiting_hours": 4,
+        "abnormal": false
+      },
+      "metadata": {"result_status": "found", "reviewed": true},
+      "artifact_ref": null,
+      "timestamp": "2026-09-04T00:00:00Z"
     }
+  ],
+  "trace": [
+    {"node": "understand_request", "task": "REQUEST_UNDERSTANDING", "profile": "CHEAP", "status": "completed", "summary": "WORKFLOW_ISSUE / DIAGNOSE"},
+    {"node": "decide_action", "task": "ACTION_DECISION", "profile": "CHEAP", "status": "completed", "summary": "SEARCH"},
+    {"node": "select_tool", "task": "TOOL_SELECTION", "profile": "CHEAP", "status": "completed", "summary": "work_order_query"},
+    {"node": "execute_tool", "task": "TOOL_SELECTION", "profile": "HARNESS", "status": "completed", "summary": "work_order_query: found"},
+    {"node": "review_tool_result", "task": "TOOL_RESULT_REVIEW", "profile": "CHEAP", "status": "completed", "summary": "TOOL_RESULT_REVIEW_COMPLETED"},
+    {"node": "decide_action", "task": "ACTION_DECISION", "profile": "CHEAP", "status": "completed", "summary": "REPLY"},
+    {"node": "generate_response", "task": "RESPONSE_GENERATION", "profile": "CHEAP", "status": "completed", "summary": "已生成最终回复"}
   ]
 }
 ```
 
-`decision_ready` means the current kernel produced request understanding and a
-next-action decision. It is not a final answer. Trace entries come from actual
-completed model invocations and expose only safe summaries; prompts, raw model
-context, chain-of-thought, provider payloads, and credentials are excluded.
+The API does not persist thread state in this phase.  A repeated `thread_id`
+is a correlation value only; it does not restore or mutate a prior run.
 
-`request_id` identifies one HTTP request and is distinct from `thread_id`,
-which identifies the caller's conversation. The service has no persistence in
-this phase, so repeated thread IDs do not restore or mutate prior state.
+## Tool and safety boundary
+
+The current registry contains three synthetic typed read-only tools:
+
+- `work_order_query` — status, approval node, handler, wait duration, anomaly;
+- `permission_query` — roles, permissions, and missing permission facts;
+- `incident_query` — incident ID, status, scope, and impact.
+
+The model chooses from registered descriptions and schemas.  The harness
+validates the call, applies `READ_ONLY`, enforces timeout/retry/round/tool-call
+limits, executes the adapter, and keeps only compact reviewed evidence in
+state.  Unknown records return typed `not_found`; unknown tools, malformed
+arguments, and write-mode calls do not execute.
+
+## Trace safety
+
+Trace entries never expose chain-of-thought, prompts, raw provider requests,
+raw tool-result blobs, source context, credentials, authorization headers, or
+tracebacks.  A planned UI placeholder is never used for a completed step: the
+UI renders the actual trace returned by this endpoint.
+
+When a structured model node fails, internal logs may correlate the request ID
+with an allowlisted node, expected schema name, logical profile, and sanitized
+category.  These diagnostics are not included in the public error envelope.
 
 ## Errors
 
@@ -138,28 +172,18 @@ Errors use one envelope:
 
 | HTTP | Code | Meaning |
 |---:|---|---|
-| 400 | `INVALID_AGENT_INPUT` | The canonical kernel rejected its mapped input. |
-| 422 | `REQUEST_VALIDATION_FAILED` | The public request contract was invalid. |
-| 502 | `MODEL_INVOCATION_FAILED` | A configured provider invocation failed. |
+| 400 | `INVALID_AGENT_INPUT` | Canonical kernel input was invalid. |
+| 422 | `REQUEST_VALIDATION_FAILED` | Public request contract was invalid. |
+| 502 | `MODEL_INVOCATION_FAILED` | Configured provider invocation failed. |
 | 502 | `MODEL_STRUCTURED_OUTPUT_INVALID` | Model output failed its typed contract. |
-| 500 | `INTERNAL_SERVER_ERROR` | An unexpected server failure occurred. |
+| 500 | `INTERNAL_SERVER_ERROR` | Unexpected server failure. |
 
-Error messages deliberately exclude raw prompts, model payloads, provider
-details, source context, credentials, and internal exception text.
+Error messages exclude prompts, model/provider payloads, source context,
+credentials, adapter data, and internal exception text.
 
-## Runtime boundary
+## Explicit limitations
 
-The application is constructed with `create_app(...)`. Tests and embedding
-runtimes can inject an `OpsAgentRuntime`; normal construction reads
-`OPSMIND_MODEL_PROVIDER`. Request-scoped provider decorators record completed
-invocations without changing the gateway, provider, graph, node, state, or
-prompt contracts.
-
-This phase intentionally has:
-
-- no persistence or checkpoints;
-- no tools or tool execution;
-- no RAG or database integration;
-- no streaming;
-- no final-response generation;
-- no UI.
+This phase intentionally has no persistence/checkpoints, authentication,
+thread resume, RAG, external enterprise integration, write tools, approval
+interrupts, or streaming.  DeepSeek live smoke is opt-in and is excluded from
+normal CI.

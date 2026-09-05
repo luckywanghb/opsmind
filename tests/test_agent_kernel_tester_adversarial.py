@@ -36,6 +36,7 @@ from opsmind import (
     RequestUnderstandingOutput,
     RiskSignal,
     StructuredModelResponse,
+    ToolRegistry,
     build_understanding_context,
     decide_action,
     run_ops_agent,
@@ -87,6 +88,22 @@ def decision_response(**overrides: object) -> dict[str, object]:
     }
     response.update(overrides)
     return response
+
+
+def grounded_response_plan(action: str = "REPLY") -> dict[str, object]:
+    """Explicit terminal fixture for the evidence-bound renderer."""
+
+    intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent,
+        "evidence_references": [],
+    }
 
 
 def state_for(query: str | None = "当前问题") -> OpsAgentState:
@@ -167,24 +184,26 @@ def test_graph_preserves_rich_canonical_state_while_replacing_only_node_sections
     )
     before = state.model_copy(deep=True)
     provider = MockModelProvider(
-        structured_responses=[understanding_response(), decision_response()]
+        structured_responses=[
+            understanding_response(),
+            decision_response(action="REPLY"),
+            grounded_response_plan(),
+        ],
+        responses=[],
     )
 
     result = run_async(run_ops_agent(state, make_gateway(provider)))
 
     assert result.understanding.primary_intent is PrimaryIntent.WORKFLOW_ISSUE
-    assert result.decision.action is AgentAction.SEARCH
+    assert result.decision.action is AgentAction.REPLY
     for field in (
         "identity",
         "conversation",
-        "task",
-        "loop",
         "facts",
         "evidence",
         "tool",
         "safety",
         "handoff",
-        "response",
     ):
         assert getattr(result, field) == getattr(before, field)
     assert result.understanding != before.understanding
@@ -253,7 +272,7 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
     )
     provider = MockModelProvider(structured_responses=[decision_response()])
 
-    run_async(decide_action(state, make_gateway(provider)))
+    run_async(decide_action(state, make_gateway(provider), ToolRegistry()))
 
     payload = json.loads(provider.history[0].messages[-1].content)
     assert set(payload) == {
@@ -262,6 +281,8 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
         "task",
         "facts",
         "evidence",
+        "latest_review",
+        "available_tools",
         "loop",
     }
     serialized = provider.history[0].messages[-1].content
@@ -270,7 +291,6 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
         "原始问题-marker",
         "summary-marker",
         "raw-evidence-marker",
-        "tool-internal-marker",
         "safety-internal-marker",
         "handoff-internal-marker",
         "response-internal-marker",
@@ -278,6 +298,7 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
         assert marker not in serialized
     assert payload["evidence"] == [
         {
+            "evidence_id": "E1",
             "source": "tool-summary",
             "summary": "compact-summary",
             "key_fields": {"status": "WAITING"},
@@ -306,7 +327,9 @@ def test_decision_node_also_rejects_missing_query_before_gateway_call() -> None:
     provider = MockModelProvider(structured_responses=[decision_response()])
 
     with pytest.raises(AgentInputError, match="current_query"):
-        run_async(decide_action(state_for(None), make_gateway(provider)))
+        run_async(
+            decide_action(state_for(None), make_gateway(provider), ToolRegistry())
+        )
 
     assert provider.invocation_count == 0
 
@@ -384,8 +407,10 @@ def test_explicit_null_nullable_fields_are_accepted_and_preserved() -> None:
     provider = MockModelProvider(
         structured_responses=[
             understanding_response(symptom=None, uncertainty=None),
-            decision_response(),
-        ]
+            decision_response(action="REPLY"),
+            grounded_response_plan(),
+        ],
+        responses=[],
     )
     state = state_for()
     before = state.model_copy(deep=True)
@@ -396,7 +421,7 @@ def test_explicit_null_nullable_fields_are_accepted_and_preserved() -> None:
     assert result.understanding.uncertainty is None
     assert result.understanding.risk_signal is RiskSignal.NONE
     assert state == before
-    assert provider.invocation_count == 2
+    assert provider.invocation_count == 3
 
 
 def test_null_risk_signal_is_rejected_instead_of_synthesizing_none() -> None:
@@ -511,7 +536,7 @@ def test_nodes_route_exact_structured_schema_and_prompt_contract_through_gateway
     first_update = run_async(understand_request(state, gateway))
     intermediate = state.model_copy(deep=True)
     intermediate.understanding = first_update["understanding"]
-    run_async(decide_action(intermediate, gateway))
+    run_async(decide_action(intermediate, gateway, ToolRegistry()))
 
     assert provider.response_models == [
         RequestUnderstandingOutput,
@@ -568,7 +593,10 @@ def test_two_concurrent_runs_with_one_shared_mock_provider_keep_query_state_isol
             understanding_response(entities={"run": "two"}),
             decision_response(action="REPLY"),
             decision_response(action="REPLY"),
-        ]
+            grounded_response_plan(),
+            grounded_response_plan(),
+        ],
+        responses=[],
     )
     gateway = make_gateway(provider)
     first_state = state_for("query-one")
@@ -590,7 +618,7 @@ def test_two_concurrent_runs_with_one_shared_mock_provider_keep_query_state_isol
     assert second_result.decision.action is AgentAction.REPLY
     assert first_state == state_for("query-one")
     assert second_state == state_for("query-two")
-    assert provider.invocation_count == 4
+    assert provider.invocation_count == 6
     assert [invocation.task for invocation in provider.history].count(
         ModelTask.REQUEST_UNDERSTANDING
     ) == 2

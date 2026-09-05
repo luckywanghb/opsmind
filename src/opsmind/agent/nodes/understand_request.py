@@ -5,10 +5,15 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from opsmind.agent.context import build_understanding_context
-from opsmind.agent.prompts import REQUEST_UNDERSTANDING_SYSTEM_PROMPT
+from opsmind.agent.diagnostics import attach_structured_node_diagnostic
+from opsmind.agent.prompts import (
+    REQUEST_UNDERSTANDING_SYSTEM_PROMPT,
+    language_instruction,
+)
 from opsmind.agent.schemas import RequestUnderstandingOutput
 from opsmind.models import (
     ModelGateway,
+    ModelInvocationError,
     ModelMessage,
     ModelProfile,
     ModelRequest,
@@ -33,7 +38,10 @@ async def understand_request(
         messages=[
             ModelMessage(
                 role=ModelRole.SYSTEM,
-                content=REQUEST_UNDERSTANDING_SYSTEM_PROMPT,
+                content=(
+                    f"{REQUEST_UNDERSTANDING_SYSTEM_PROMPT}\n"
+                    f"{language_instruction(canonical_state.conversation.current_query)}"
+                ),
             ),
             ModelMessage(
                 role=ModelRole.USER,
@@ -42,12 +50,30 @@ async def understand_request(
         ],
         metadata={"node": "understand_request"},
     )
-    structured = await gateway.invoke_structured(request, RequestUnderstandingOutput)
     try:
+        structured = await gateway.invoke_structured(
+            request,
+            RequestUnderstandingOutput,
+        )
         output = RequestUnderstandingOutput.model_validate(structured.parsed)
         understanding = UnderstandingState.model_validate(output.model_dump())
-    except ValidationError as exc:
-        raise ModelStructuredOutputError(
+    except (ModelStructuredOutputError, ModelInvocationError) as exc:
+        attach_structured_node_diagnostic(
+            exc,
+            node="understand_request",
+            expected_schema_name=RequestUnderstandingOutput.__name__,
+            logical_profile=ModelProfile.CHEAP.value,
+        )
+        raise
+    except ValidationError:
+        error = ModelStructuredOutputError(
             "request-understanding output failed state validation"
-        ) from exc
+        )
+        attach_structured_node_diagnostic(
+            error,
+            node="understand_request",
+            expected_schema_name=RequestUnderstandingOutput.__name__,
+            logical_profile=ModelProfile.CHEAP.value,
+        )
+        raise error from None
     return {"understanding": understanding}

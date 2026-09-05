@@ -71,14 +71,31 @@ def understanding(
 def decision(
     *,
     marker: str = "WO-42",
+    action: AgentAction = AgentAction.SEARCH,
     goal: str | None = None,
     rationale: str = "The current node is needed before explaining the delay",
 ) -> ActionDecisionOutput:
     return ActionDecisionOutput(
-        action=AgentAction.SEARCH,
+        action=action,
         goal=goal or f"Inspect the current approval state for {marker}",
         rationale=rationale,
     )
+
+
+def grounded_plan(action: str = "REPLY") -> dict[str, object]:
+    intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent,
+        "evidence_references": [],
+        "limitation": "NONE",
+        "clarification_target": "GENERIC",
+    }
 
 
 def gateway_for(provider: ModelProvider) -> ModelGateway:
@@ -101,8 +118,13 @@ def runtime_for(
         structured_responses=(
             list(responses)
             if responses is not None
-            else [understanding(), decision()]
+            else [
+                understanding(),
+                decision(action=AgentAction.REPLY),
+                grounded_plan(),
+            ]
         ),
+        responses=[],
         provider_name="test-provider",
     )
     return OpsAgentRuntime(gateway_for(provider)), provider
@@ -143,6 +165,7 @@ class QueryAwareProvider:
 
     def __init__(self) -> None:
         self.requests: list[ModelRequest] = []
+        self._action_counts: dict[str, int] = {}
 
     @property
     def invocation_count(self) -> int:
@@ -161,7 +184,11 @@ class QueryAwareProvider:
     ) -> ModelResponse:
         self.requests.append(request.model_copy(deep=True))
         await asyncio.sleep(0)
-        return ModelResponse(content="unused", provider="test-provider", model=model)
+        return ModelResponse(
+            content="已根据当前可确认信息完成回复。",
+            provider="test-provider",
+            model=model,
+        )
 
     async def invoke_structured(
         self,
@@ -174,14 +201,38 @@ class QueryAwareProvider:
         marker = self._marker(request)
         await asyncio.sleep(0)
         if request.task is ModelTask.REQUEST_UNDERSTANDING:
-            payload: BaseModel = understanding(
+            payload: BaseModel | dict[str, object] = understanding(
                 marker=marker,
                 symptom=f"symptom:{marker}",
                 entities={"marker": marker},
             )
+        elif request.task is ModelTask.ACTION_DECISION:
+            count = self._action_counts.get(marker, 0)
+            self._action_counts[marker] = count + 1
+            payload = decision(
+                marker=marker,
+                action=AgentAction.SEARCH if count == 0 else AgentAction.REPLY,
+                goal=f"goal:{marker}",
+            )
+        elif request.task is ModelTask.TOOL_SELECTION:
+            payload = {
+                "selected_tool": "work_order_query",
+                "arguments": {"work_order_id": "WO-INTEGRATION"},
+                "expected_resolution": "confirm status",
+            }
+        elif request.task is ModelTask.TOOL_RESULT_REVIEW:
+            payload = {
+                "evidence_sufficient": True,
+                "summary": "reviewed read-only facts",
+                "confirmed_facts": ["a typed result was reviewed"],
+                "unresolved_questions": [],
+                "recommended_action": "REPLY",
+            }
         else:
-            payload = decision(marker=marker, goal=f"goal:{marker}")
-        parsed = response_model.model_validate(payload.model_dump())
+            payload = grounded_plan()
+        parsed = response_model.model_validate(
+            payload.model_dump() if isinstance(payload, BaseModel) else payload
+        )
         return StructuredModelResponse(
             parsed=parsed,
             response=ModelResponse(
@@ -258,7 +309,7 @@ def test_message_exact_limit_is_accepted() -> None:
     )
 
     assert response.status_code == 200
-    assert provider.invocation_count == 2
+    assert provider.invocation_count == 3
 
 
 def test_zero_width_space_only_message_is_not_treated_as_content() -> None:
@@ -362,14 +413,19 @@ def test_http_to_langgraph_to_gateway_integration_maps_state_and_trace() -> None
     assert [request.task for request in provider.requests] == [
         ModelTask.REQUEST_UNDERSTANDING,
         ModelTask.ACTION_DECISION,
+        ModelTask.TOOL_SELECTION,
+        ModelTask.TOOL_RESULT_REVIEW,
+        ModelTask.ACTION_DECISION,
+        ModelTask.RESPONSE_GENERATION,
     ]
-    assert [request.profile for request in provider.requests] == [
-        ModelProfile.CHEAP,
-        ModelProfile.CHEAP,
-    ]
+    assert all(request.profile is ModelProfile.CHEAP for request in provider.requests)
     assert [request.metadata["node"] for request in provider.requests] == [
         "understand_request",
         "decide_action",
+        "select_tool",
+        "review_tool_result",
+        "decide_action",
+        "generate_response",
     ]
     first_context = json.loads(provider.requests[0].messages[-1].content)
     second_context = json.loads(provider.requests[1].messages[-1].content)
@@ -382,12 +438,30 @@ def test_http_to_langgraph_to_gateway_integration_maps_state_and_trace() -> None
     assert [step["node"] for step in body["trace"]] == [
         "understand_request",
         "decide_action",
+        "select_tool",
+        "execute_tool",
+        "review_tool_result",
+        "decide_action",
+        "generate_response",
     ]
     assert [step["task"] for step in body["trace"]] == [
         "REQUEST_UNDERSTANDING",
         "ACTION_DECISION",
+        "TOOL_SELECTION",
+        "TOOL_SELECTION",
+        "TOOL_RESULT_REVIEW",
+        "ACTION_DECISION",
+        "RESPONSE_GENERATION",
     ]
-    assert [step["profile"] for step in body["trace"]] == ["CHEAP", "CHEAP"]
+    assert [step["profile"] for step in body["trace"]] == [
+        "CHEAP",
+        "CHEAP",
+        "CHEAP",
+        "HARNESS",
+        "CHEAP",
+        "CHEAP",
+        "CHEAP",
+    ]
     assert all(step["status"] == "completed" for step in body["trace"])
 
 
@@ -417,7 +491,7 @@ async def test_concurrent_requests_keep_trace_and_state_isolated() -> None:
     for message, body in zip(messages, bodies, strict=True):
         assert body["thread_id"] == "same-thread"
         assert body["decision"]["goal"] == f"goal:{message}"
-        assert body["trace"][1]["summary"] == f"SEARCH: goal:{message}"
+        assert body["trace"][1]["summary"] == "SEARCH"
 
 
 def test_trace_exposes_only_safe_facts_not_raw_provider_payload_or_cot() -> None:
@@ -431,8 +505,8 @@ def test_trace_exposes_only_safe_facts_not_raw_provider_payload_or_cot() -> None
             model="test-model",
         ),
     )
-    second = decision(rationale=hidden_cot)
-    client, _ = client_for([first, second])
+    second = decision(action=AgentAction.REPLY, rationale=hidden_cot)
+    client, _ = client_for([first, second, grounded_plan()])
 
     response = client.post(
         "/api/v1/chat",

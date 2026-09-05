@@ -7,7 +7,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from opsmind.agent import run_ops_agent
+from opsmind.agent import AgentTraceEvent, run_ops_agent, run_ops_agent_with_trace
 from opsmind.models import (
     ModelGateway,
     ModelProvider,
@@ -16,6 +16,7 @@ from opsmind.models import (
     StructuredModelResponse,
 )
 from opsmind.state import OpsAgentState
+from opsmind.tools import ToolRegistry, build_default_tool_registry
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -33,6 +34,7 @@ class AgentRunResult:
 
     state: OpsAgentState
     invocations: tuple[CompletedInvocation, ...]
+    events: tuple[AgentTraceEvent, ...] = ()
 
 
 class _RecordingProvider:
@@ -75,21 +77,31 @@ class _RecordingProvider:
         )
         return response
 
-
 class OpsAgentRuntime:
     """Own the injected gateway and invoke the canonical Agent entry point."""
 
-    def __init__(self, gateway: ModelGateway) -> None:
+    def __init__(
+        self,
+        gateway: ModelGateway,
+        tool_registry: ToolRegistry | None = None,
+    ) -> None:
         self._gateway = gateway
+        self._tool_registry = (tool_registry or build_default_tool_registry()).copy()
 
     @property
     def gateway(self) -> ModelGateway:
         return self._gateway
 
+    @property
+    def tool_registry(self) -> ToolRegistry:
+        """Return a detached registry snapshot for inspection/injection."""
+
+        return self._tool_registry.copy()
+
     async def run(self, state: OpsAgentState) -> OpsAgentState:
         """Delegate one request to the existing kernel unchanged."""
 
-        return await run_ops_agent(state, self._gateway)
+        return await run_ops_agent(state, self._gateway, self._tool_registry)
 
     async def run_with_trace(self, state: OpsAgentState) -> AgentRunResult:
         """Run the kernel with request-local records of completed calls."""
@@ -103,5 +115,13 @@ class OpsAgentRuntime:
             routes=self._gateway.routes,
             providers=traced_providers,
         )
-        result = await run_ops_agent(state, traced_gateway)
-        return AgentRunResult(state=result, invocations=tuple(records))
+        result, events = await run_ops_agent_with_trace(
+            state,
+            traced_gateway,
+            self._tool_registry,
+        )
+        return AgentRunResult(
+            state=result,
+            invocations=tuple(records),
+            events=events,
+        )

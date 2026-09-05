@@ -43,8 +43,12 @@ class _DeterministicMockProvider:
         *,
         model: str,
     ) -> ModelResponse:
-        del request
-        return ModelResponse(content="", provider="mock", model=model)
+        content = {
+            ModelTask.CLARIFICATION: "请补充需要查询的对象或范围。",
+            ModelTask.RESPONSE_GENERATION: "已根据当前可确认的信息完成回复。",
+            ModelTask.HANDOFF_GENERATION: "当前请求需要转人工继续处理。",
+        }.get(request.task, "已完成本次请求处理。")
+        return ModelResponse(content=content, provider="mock", model=model)
 
     async def invoke_structured(
         self,
@@ -64,8 +68,8 @@ class _DeterministicMockProvider:
             )
         else:
             payload = ActionDecisionOutput(
-                action=AgentAction.ASK_USER,
-                goal="Collect enough information to continue.",
+                action=AgentAction.END_CONVERSATION,
+                goal="Close the deterministic mock demonstration run.",
                 rationale="Deterministic mock mode does not perform live reasoning.",
             )
         parsed = response_model.model_validate(payload.model_dump())

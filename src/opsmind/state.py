@@ -252,6 +252,15 @@ class FactsState(StateModel):
 class EvidenceItem(StateModel):
     """Compact evidence retained in state instead of a raw tool result."""
 
+    # Assigned by the run-local evidence projector.  ``None`` remains
+    # accepted for caller-supplied historical evidence; terminal grounding
+    # assigns deterministic E1/E2/... identities for that input without
+    # changing the caller's state.
+    evidence_id: str | None = Field(
+        default=None,
+        pattern=r"^E[1-9][0-9]{0,5}$",
+        max_length=7,
+    )
     source: str = Field(max_length=EVIDENCE_MAX_STRING_LENGTH)
     summary: str = Field(max_length=EVIDENCE_MAX_STRING_LENGTH)
     key_fields: FiniteJsonObject = Field(default_factory=dict)
@@ -314,6 +323,13 @@ class ToolState(StateModel):
     selected_tool: str | None = None
     arguments: FiniteJsonObject = Field(default_factory=dict)
     expected_resolution: str | None = None
+    # Result-review fields are compact model output only.  Raw adapter output
+    # stays transient between execute_tool and review_tool_result nodes.
+    review_summary: str | None = None
+    evidence_sufficient: bool | None = None
+    recommended_action: AgentAction | None = None
+    last_result_status: str | None = None
+    last_error_code: str | None = None
 
 
 class SafetyState(StateModel):

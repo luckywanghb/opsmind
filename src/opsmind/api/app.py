@@ -15,11 +15,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from opsmind.agent.errors import AgentInputError
+from opsmind.agent.graph import bounded_trace_summary
+from opsmind.agent.grounding import stable_evidence_items
 from opsmind.api.composition import build_runtime
 from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
 from opsmind.api.schemas import (
     AgentTraceStep,
     ChatDecision,
+    ChatEvidence,
+    ChatHandoff,
     ChatRequest,
     ChatResponse,
     ChatUnderstanding,
@@ -28,11 +32,38 @@ from opsmind.api.schemas import (
     HealthResponse,
 )
 from opsmind.api.settings import RuntimeSettings
-from opsmind.models import ModelInvocationError, ModelStructuredOutputError
+from opsmind.models import (
+    ModelInvocationError,
+    ModelStructuredOutputError,
+    StructuredNodeFailureDiagnostic,
+)
 from opsmind.state import IdentityState, OpsAgentState
 
 LOGGER = logging.getLogger("opsmind.api")
 RequestHandler = Callable[[Request], Awaitable[Response]]
+
+
+def _log_structured_node_failure(
+    request: Request,
+    error: ModelInvocationError | ModelStructuredOutputError,
+) -> None:
+    """Log an allowlisted, request-correlated structured-node diagnostic."""
+
+    diagnostic = getattr(error, "diagnostic", None)
+    if not isinstance(diagnostic, StructuredNodeFailureDiagnostic):
+        return
+    # Keep this record deliberately explicit.  In particular, do not pass
+    # ``error``/``exc_info``: provider messages and exception chains may carry
+    # prompts, payloads, credentials, or user input.
+    LOGGER.warning(
+        "structured_node_failure request_id=%s node=%s "
+        "expected_schema_name=%s logical_profile=%s category=%s",
+        _request_id(request),
+        diagnostic.node,
+        diagnostic.expected_schema_name,
+        diagnostic.logical_profile,
+        diagnostic.category,
+    )
 
 
 def _request_id(request: Request) -> str:
@@ -65,12 +96,27 @@ def _error_response(
 def _trace_summary(result: AgentRunResult, node: str) -> str:
     if node == "understand_request":
         understanding = result.state.understanding
-        return f"{understanding.primary_intent} / {understanding.request_type}"
+        return bounded_trace_summary(
+            f"{understanding.primary_intent} / {understanding.request_type}"
+        )
     decision = result.state.decision
-    return f"{decision.action}: {decision.goal}"
+    return bounded_trace_summary(
+        decision.action.value if decision.action is not None else "ACTION_UNKNOWN"
+    )
 
 
 def _trace(result: AgentRunResult) -> list[AgentTraceStep]:
+    if result.events:
+        return [
+            AgentTraceStep(
+                node=event.node,
+                task=event.task,
+                profile=event.profile,
+                status=event.status,
+                summary=event.summary,
+            )
+            for event in result.events
+        ]
     steps: list[AgentTraceStep] = []
     for invocation in result.invocations:
         node = invocation.request.metadata.get("node")
@@ -97,12 +143,35 @@ def _chat_response(
         result.state.understanding.model_dump()
     )
     decision = ChatDecision.model_validate(result.state.decision.model_dump())
+    state_status = result.state.task.status
+    status = {
+        "WAITING_USER": "waiting_user",
+        "TRANSFERRED": "transferred",
+        "RESOLVED": "completed",
+        "CLOSED": "closed",
+    }.get(state_status.value if state_status is not None else "", "decision_ready")
+    handoff = (
+        ChatHandoff(
+            required=result.state.handoff.required,
+            summary=result.state.handoff.summary,
+        )
+        if result.state.handoff.required or result.state.handoff.summary
+        else None
+    )
     return ChatResponse(
         request_id=request_id,
         thread_id=thread_id,
+        status=status,
+        final_status=state_status.value if state_status is not None else None,
         understanding=understanding,
         decision=decision,
         trace=_trace(result),
+        final_reply=result.state.response.message,
+        evidence=[
+            ChatEvidence.model_validate(item.model_dump())
+            for item in stable_evidence_items(result.state.evidence.items)
+        ],
+        handoff=handoff,
     )
 
 
@@ -183,7 +252,7 @@ def create_app(
         request: Request,
         exc: ModelStructuredOutputError,
     ) -> JSONResponse:
-        del exc
+        _log_structured_node_failure(request, exc)
         return _error_response(
             request,
             status_code=502,
@@ -196,7 +265,7 @@ def create_app(
         request: Request,
         exc: ModelInvocationError,
     ) -> JSONResponse:
-        del exc
+        _log_structured_node_failure(request, exc)
         return _error_response(
             request,
             status_code=502,
@@ -250,8 +319,14 @@ def create_app(
     ) -> ChatResponse:
         thread_id = payload.thread_id or str(uuid4())
         request.state.thread_id = thread_id
+        user_id = payload.source_context.get("user_id")
+        site_id = payload.source_context.get("site_id")
         state = OpsAgentState(
-            identity=IdentityState(source_context=payload.source_context),
+            identity=IdentityState(
+                user_id=user_id if isinstance(user_id, str) else None,
+                site_id=site_id if isinstance(site_id, str) else None,
+                source_context=payload.source_context,
+            ),
             conversation={
                 "thread_id": thread_id,
                 "original_query": payload.message,

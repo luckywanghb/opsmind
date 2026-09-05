@@ -19,6 +19,8 @@ from opsmind.models.errors import (
     ModelRouteConfigurationError,
     ModelRouteNotFoundError,
     ModelStructuredOutputError,
+    StructuredFailureCategory,
+    StructuredNodeFailureDiagnostic,
 )
 from opsmind.models.gateway import ModelGateway
 from opsmind.models.providers import (
@@ -54,6 +56,8 @@ __all__ = [
     "ModelStructuredOutputError",
     "ModelTask",
     "ModelUsage",
+    "StructuredFailureCategory",
+    "StructuredNodeFailureDiagnostic",
     "StructuredModelResponse",
     "build_deepseek_gateway",
 ]
