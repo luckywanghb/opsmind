@@ -31,6 +31,7 @@ const isOptionalNullableString = (value: unknown): boolean => value === undefine
 function isEvidence(value: unknown): boolean {
   return (
     isObject(value) &&
+    (value.evidence_id === undefined || (typeof value.evidence_id === "string" && /^E[1-9][0-9]{0,5}$/.test(value.evidence_id))) &&
     typeof value.source === "string" &&
     typeof value.summary === "string" &&
     isObject(value.key_fields) &&

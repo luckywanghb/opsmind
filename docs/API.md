@@ -70,9 +70,12 @@ Successful responses include:
 - `status`: `completed`, `waiting_user`, `transferred`, `closed`, or the
   intermediate-compatible `decision_ready` value;
 - validated `understanding` and latest model `decision`;
-- `final_status`, `final_reply`, compact `evidence`, and optional `handoff`;
+- `final_status`, a deterministic grounded `final_reply`, compact `evidence`
+  with stable per-run IDs, and optional `handoff`;
 - `trace`, containing only actual completed/failed/blocked model or harness
-  steps.
+  steps with deterministic action/status summaries. The `decision.goal` and
+  `decision.rationale` fields remain typed control-plane diagnostics; they are
+  not evidence and are not used to render the final reply.
 
 Example terminal response shape:
 
@@ -95,12 +98,19 @@ Example terminal response shape:
     "goal": "基于复核证据回复",
     "rationale": "证据已足够"
   },
-  "final_reply": "工单正在设备主管审批，当前处理人为 U10108，已等待 4 小时，未标记异常。",
+  "final_reply": "来源 work_order_query：状态=APPROVING；来源 work_order_query：当前节点=设备主管审批；来源 work_order_query：当前处理人=U10108；来源 work_order_query：已等待=4 小时；来源 work_order_query：源异常标记=false；当前来源未提供原因、SLA 或阈值字段，无法据此得出未返回的业务结论。",
   "evidence": [
     {
+      "evidence_id": "E1",
       "source": "work_order_query",
-      "summary": "已复核工单状态",
-      "key_fields": {"status": "APPROVING", "waiting_hours": 4},
+      "summary": "work_order_query: found",
+      "key_fields": {
+        "status": "APPROVING",
+        "current_node": "设备主管审批",
+        "current_handler": "U10108",
+        "waiting_hours": 4,
+        "abnormal": false
+      },
       "metadata": {"result_status": "found", "reviewed": true},
       "artifact_ref": null,
       "timestamp": "2026-09-04T00:00:00Z"
@@ -108,12 +118,12 @@ Example terminal response shape:
   ],
   "trace": [
     {"node": "understand_request", "task": "REQUEST_UNDERSTANDING", "profile": "CHEAP", "status": "completed", "summary": "WORKFLOW_ISSUE / DIAGNOSE"},
-    {"node": "decide_action", "task": "ACTION_DECISION", "profile": "CHEAP", "status": "completed", "summary": "SEARCH: 查询当前状态"},
+    {"node": "decide_action", "task": "ACTION_DECISION", "profile": "CHEAP", "status": "completed", "summary": "SEARCH"},
     {"node": "select_tool", "task": "TOOL_SELECTION", "profile": "CHEAP", "status": "completed", "summary": "work_order_query"},
     {"node": "execute_tool", "task": "TOOL_SELECTION", "profile": "HARNESS", "status": "completed", "summary": "work_order_query: found"},
-    {"node": "review_tool_result", "task": "TOOL_RESULT_REVIEW", "profile": "CHEAP", "status": "completed", "summary": "已复核工单状态"},
-    {"node": "decide_action", "task": "ACTION_DECISION", "profile": "CHEAP", "status": "completed", "summary": "REPLY: 基于复核证据回复"},
-    {"node": "generate_response", "task": "RESPONSE_GENERATION", "profile": "CHEAP", "status": "completed", "summary": "final response generated"}
+    {"node": "review_tool_result", "task": "TOOL_RESULT_REVIEW", "profile": "CHEAP", "status": "completed", "summary": "TOOL_RESULT_REVIEW_COMPLETED"},
+    {"node": "decide_action", "task": "ACTION_DECISION", "profile": "CHEAP", "status": "completed", "summary": "REPLY"},
+    {"node": "generate_response", "task": "RESPONSE_GENERATION", "profile": "CHEAP", "status": "completed", "summary": "已生成最终回复"}
   ]
 }
 ```

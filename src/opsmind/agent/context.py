@@ -9,6 +9,8 @@ from typing import Any
 from pydantic import Field
 
 from opsmind.agent.errors import AgentInputError
+from opsmind.agent.grounding import stable_evidence_items
+from opsmind.agent.schemas import GroundedTerminalMode
 from opsmind.state import (
     AgentAction,
     DecisionState,
@@ -24,6 +26,7 @@ from opsmind.state import (
     ToolState,
     UnderstandingState,
 )
+from opsmind.tools import ToolFieldPresentation, ToolRegistry, UnknownToolError
 
 
 class UnderstandingContext(StateModel):
@@ -86,6 +89,7 @@ class ToolCapabilityContext(StateModel):
 class EvidenceSummaryContext(StateModel):
     """Compact evidence projection; raw tool results never enter context."""
 
+    evidence_id: str | None = None
     source: str
     summary: str
     key_fields: FiniteJsonObject = Field(default_factory=dict)
@@ -155,6 +159,29 @@ class ResponseContext(StateModel):
     safety_capability: str
 
 
+class GroundedEvidenceContext(StateModel):
+    """Evidence and typed field presentation metadata for plan selection."""
+
+    evidence_id: str
+    source: str
+    key_fields: FiniteJsonObject = Field(default_factory=dict)
+    metadata: FiniteJsonObject = Field(default_factory=dict)
+    field_presentations: dict[str, ToolFieldPresentation] = Field(
+        default_factory=dict
+    )
+
+
+class ResponsePlanContext(StateModel):
+    """Model context that cannot carry decision prose into final grounding."""
+
+    current_query: str
+    terminal_mode: GroundedTerminalMode
+    evidence: list[GroundedEvidenceContext] = Field(default_factory=list)
+    # Capability metadata is useful to decide whether a limitation should be
+    # stated, but it is not itself treated as a source fact by the renderer.
+    available_tools: list[ToolCapabilityContext] = Field(default_factory=list)
+
+
 def _validated_state(state: OpsAgentState) -> OpsAgentState:
     """Revalidate and detach the canonical state at a node boundary."""
 
@@ -190,6 +217,7 @@ def _evidence_summary(item: EvidenceItem) -> EvidenceSummaryContext:
     """Project one bounded evidence item without raw payload fields."""
 
     return EvidenceSummaryContext(
+        evidence_id=item.evidence_id,
         source=item.source,
         summary=item.summary,
         key_fields=deepcopy(item.key_fields),
@@ -262,7 +290,10 @@ def build_decision_context(
         understanding=canonical_state.understanding.model_copy(deep=True),
         task=_task_context(canonical_state.task),
         facts=_facts_context(canonical_state.facts),
-        evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
+        evidence=[
+            _evidence_summary(item)
+            for item in stable_evidence_items(canonical_state.evidence.items)
+        ],
         latest_review=_latest_review_context(canonical_state.tool),
         available_tools=_capability_context(available_tools),
         loop=_loop_context(canonical_state.loop),
@@ -286,7 +317,10 @@ def build_tool_selection_context(
         understanding=canonical_state.understanding.model_copy(deep=True),
         decision=canonical_state.decision.model_copy(deep=True),
         identity=identity,
-        evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
+        evidence=[
+            _evidence_summary(item)
+            for item in stable_evidence_items(canonical_state.evidence.items)
+        ],
         available_tools=deepcopy(available_tools),
         loop=_loop_context(canonical_state.loop),
     )
@@ -318,7 +352,8 @@ def build_tool_review_context(
         available_tools=_capability_context(available_tools),
         selected_tool_schema=deepcopy(selected_tool_schema),
         prior_evidence=[
-            _evidence_summary(item) for item in canonical_state.evidence.items
+            _evidence_summary(item)
+            for item in stable_evidence_items(canonical_state.evidence.items)
         ],
         error_code=error_code,
     )
@@ -337,11 +372,78 @@ def build_response_context(
         understanding=canonical_state.understanding.model_copy(deep=True),
         decision=canonical_state.decision.model_copy(deep=True),
         facts=_facts_context(canonical_state.facts),
-        evidence=[_evidence_summary(item) for item in canonical_state.evidence.items],
+        evidence=[
+            _evidence_summary(item)
+            for item in stable_evidence_items(canonical_state.evidence.items)
+        ],
         latest_review=_latest_review_context(canonical_state.tool),
         available_tools=_capability_context(available_tools),
         handoff_required=canonical_state.handoff.required,
         safety_capability=canonical_state.safety.capability.value,
+    )
+
+
+def _response_terminal_mode(state: OpsAgentState) -> GroundedTerminalMode:
+    action = state.decision.action
+    if action is None:
+        raise AgentInputError("decision.action is required for a response plan")
+    try:
+        return GroundedTerminalMode(action.value)
+    except ValueError as exc:
+        raise AgentInputError(
+            "response plan requires a terminal action"
+        ) from exc
+
+
+def build_response_plan_context(
+    state: OpsAgentState,
+    tool_registry: ToolRegistry,
+) -> ResponsePlanContext:
+    """Build the only model context allowed for grounded terminal planning.
+
+    In particular, ``DecisionState.goal``/``rationale``, review prose and
+    model-confirmed fact strings are intentionally absent.  The plan model
+    can select canonical values by ID/path, while the renderer later ignores
+    all model prose entirely.
+    """
+
+    canonical_state = _validated_state(state)
+    query = _current_query(canonical_state)
+    stable_items = stable_evidence_items(canonical_state.evidence.items)
+    grounded_evidence: list[GroundedEvidenceContext] = []
+    for item in stable_items:
+        try:
+            descriptions = tool_registry.describe_for_response(item.source)
+        except UnknownToolError:
+            # Historical/manual evidence from an unregistered source cannot
+            # be selected by a grounded plan. Keep it out of the model
+            # context; a reference to its stable ID still fails closed in the
+            # renderer rather than receiving an untyped fallback.
+            continue
+        fields_value = descriptions.get("fields", {})
+        field_presentations: dict[str, ToolFieldPresentation] = {}
+        if isinstance(fields_value, dict):
+            for field_name, metadata in fields_value.items():
+                if isinstance(metadata, dict):
+                    field_presentations[field_name] = (
+                        ToolFieldPresentation.model_validate(metadata)
+                    )
+        grounded_evidence.append(
+            GroundedEvidenceContext(
+                evidence_id=item.evidence_id or "E1",
+                source=item.source,
+                key_fields={**item.key_fields},
+                metadata={**item.metadata},
+                field_presentations=field_presentations,
+            )
+        )
+    return ResponsePlanContext(
+        current_query=query,
+        terminal_mode=_response_terminal_mode(canonical_state),
+        evidence=grounded_evidence,
+        available_tools=_capability_context(
+            tool_registry.describe_capabilities()
+        ),
     )
 
 
@@ -351,8 +453,10 @@ __all__ = [
     "DecisionLoopContext",
     "DecisionTaskContext",
     "EvidenceSummaryContext",
+    "GroundedEvidenceContext",
     "LatestReviewContext",
     "ResponseContext",
+    "ResponsePlanContext",
     "ToolCapabilityContext",
     "ToolIdentityContext",
     "ToolReviewContext",
@@ -360,6 +464,7 @@ __all__ = [
     "UnderstandingContext",
     "build_decision_context",
     "build_response_context",
+    "build_response_plan_context",
     "build_tool_review_context",
     "build_tool_selection_context",
     "build_understanding_context",

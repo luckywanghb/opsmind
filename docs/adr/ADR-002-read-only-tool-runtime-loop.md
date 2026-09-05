@@ -116,6 +116,38 @@ migrated to the new contract.  A real DeepSeek D01 smoke remains opt-in and is
 not part of normal CI; browser validation still requires the coordinated
 configured runtime and ports reserved by the parent task.
 
+## PM Architecture Amendment — Evidence-Bound User-Facing Output
+
+The PM architecture decision in Issue #16
+(`AUTHORIZE_GENERIC_RELIABILITY_ARCHITECTURE`) adds a hard output-grounding
+boundary without changing the generic loop or model-owned routing.
+
+Terminal model nodes now return a transient `GroundedResponsePlanOutput` only:
+
+- a terminal mode (`REPLY`, `ASK_USER`, `TRANSFER_HUMAN`, or
+  `END_CONVERSATION`);
+- a bounded presentation intent/limitation enum; and
+- zero or more `EvidenceReference` values containing a run-local evidence ID
+  and canonical field path.
+
+The plan has no answer, claim, summary, or other free-form factual field. The
+review projector assigns stable per-run IDs (`E1`, `E2`, ...), and the model
+sees typed field/presentation metadata from the registered tool contract. The
+harness resolves every ID/path against the compact evidence and response
+schema before rendering. Any unknown ID, unknown path, missing/null field,
+duplicate reference, extra plan field, or terminal-mode mismatch fails closed
+as a sanitized structured-node error; no partial text is rendered.
+
+The deterministic Simplified-Chinese renderer emits source-qualified labels,
+units, values, and boolean flags from the resolved typed fields only. Fixed
+limitation templates cover absent causal, SLA/threshold, entitlement,
+remediation, scope, and match evidence. An elapsed duration remains an
+elapsed duration, `false` remains the source flag `false`, and neither becomes
+a progression, normality, timeout, entitlement, or remediation conclusion.
+Decision goals/rationales and review prose remain control-plane model text;
+they are absent from the grounded plan context, ignored by the renderer, and
+public traces use deterministic action/node summaries.
+
 ## Alternatives rejected
 
 - Case-specific `if/elif` routing by intent, wording, or fixture ID.

@@ -2,10 +2,10 @@
 
 ## Status
 
-TEST — narrow escalation remediation is implemented on a new commit and
-deterministically validated; independent Tester/Reviewer evidence and the PM
-architecture gate remain required.  No live-provider/browser budget was used
-for this follow-up.
+TEST — the PM-authorized Evidence-Bound User-Facing Output amendment is
+implemented on new commits and deterministically validated; independent
+Tester/Reviewer evidence and the PM architecture gate remain required. No
+live-provider/browser budget was used for this follow-up.
 
 ## Source
 
@@ -32,6 +32,12 @@ understand → decide → select typed read-only tool → execute → review evi
   review, and terminal generation;
 - bounded rounds/tool calls/retries/timeouts and deterministic READ_ONLY policy;
 - compact evidence and actual safe trace/API projection;
+- transient typed `EvidenceReference` and `GroundedResponsePlanOutput`, stable
+  per-run evidence IDs, typed tool-field presentation metadata, fail-closed
+  reference validation, and deterministic source-qualified Simplified-Chinese
+  rendering;
+- control-plane-only decision goal/rationale with action/status-only public
+  trace/UI summaries;
 - schema-preserving bounded review metadata, finite adapter-result rejection,
   and allowlisted request-correlated structured-node diagnostics;
 - Simplified Chinese prompt contract and minimal UI localization/rendering;

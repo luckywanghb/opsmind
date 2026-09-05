@@ -70,6 +70,7 @@ export interface TraceEntry {
 }
 
 export interface ChatEvidence {
+  evidence_id?: string | null;
   source: string;
   summary: string;
   key_fields: Record<string, unknown>;

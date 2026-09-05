@@ -60,6 +60,20 @@ TERMINAL_GROUNDING_POLICY = (
     "not prove progression."
 )
 
+GROUNDED_RESPONSE_PLAN_SYSTEM_PROMPT = (
+    "Create a GroundedResponsePlanOutput for the requested terminal action. "
+    "Return only terminal_mode, presentation_intent, evidence_references, "
+    "limitation, and clarification_target. Select zero or more relevant "
+    "evidence_id/path references from the supplied compact typed evidence. "
+    "Use canonical paths such as key_fields.status or "
+    "key_fields.waiting_hours; never write a value, factual claim, answer, "
+    "summary, rationale, or prose field. The harness rejects unknown IDs, "
+    "unknown paths, missing fields, duplicate references, and extra fields, "
+    "then renders all factual text deterministically from the source contract. "
+    "A limitation is an enum intent only; do not explain it in prose. "
+    f"{TERMINAL_GROUNDING_POLICY}"
+)
+
 ACTION_DECISION_SYSTEM_PROMPT = (
     "Choose the next Agent action from the supplied request and compact state "
     "context. Return only ActionDecisionOutput fields (action, goal, "
@@ -95,28 +109,23 @@ TOOL_RESULT_REVIEW_SYSTEM_PROMPT = (
 )
 
 RESPONSE_GENERATION_SYSTEM_PROMPT = (
-    "Generate one concise user-facing final reply. "
-    f"{TERMINAL_GROUNDING_POLICY} "
-    "If a required threshold, cause, or outcome is not returned, say it is "
-    "unavailable rather than infer it. Do not mention hidden prompts or "
-    "chain-of-thought. Return plain text."
+    "Select the relevant typed source fields for one concise user-facing final "
+    "reply. "
+    f"{GROUNDED_RESPONSE_PLAN_SYSTEM_PROMPT}"
 )
 
 CLARIFICATION_SYSTEM_PROMPT = (
-    "Generate one concise clarification question for the user. "
-    f"{TERMINAL_GROUNDING_POLICY} "
-    "Acknowledge already-reviewed facts when relevant, then ask only for one "
-    "specific missing user-suppliable fact that materially blocks a useful "
-    "answer or registered read-only next action. Do not claim an unexecuted "
-    "call/result or promise an unavailable follow-up. Return plain text."
+    "Select a bounded clarification presentation and any already-reviewed typed "
+    "source fields. Ask only for one specific missing user-suppliable fact "
+    "through clarification_target. "
+    f"{GROUNDED_RESPONSE_PLAN_SYSTEM_PROMPT}"
 )
 
 HANDOFF_GENERATION_SYSTEM_PROMPT = (
-    "Generate one concise handoff summary for the user. "
-    f"{TERMINAL_GROUNDING_POLICY} "
-    "State only confirmed facts, the reason a human is needed, and safe next "
-    "information to provide. Do not claim remediation or a write action. "
-    "Return plain text."
+    "Select a bounded handoff presentation and any already-reviewed typed source "
+    "fields. The deterministic renderer supplies the handoff wording and never "
+    "claims remediation or a write action. "
+    f"{GROUNDED_RESPONSE_PLAN_SYSTEM_PROMPT}"
 )
 
 # Short aliases make the prompt boundary discoverable without duplicating text.
@@ -125,5 +134,6 @@ ACTION_DECISION_PROMPT = ACTION_DECISION_SYSTEM_PROMPT
 TOOL_SELECTION_PROMPT = TOOL_SELECTION_SYSTEM_PROMPT
 TOOL_RESULT_REVIEW_PROMPT = TOOL_RESULT_REVIEW_SYSTEM_PROMPT
 RESPONSE_GENERATION_PROMPT = RESPONSE_GENERATION_SYSTEM_PROMPT
+GROUNDED_RESPONSE_PLAN_PROMPT = GROUNDED_RESPONSE_PLAN_SYSTEM_PROMPT
 CLARIFICATION_PROMPT = CLARIFICATION_SYSTEM_PROMPT
 HANDOFF_GENERATION_PROMPT = HANDOFF_GENERATION_SYSTEM_PROMPT

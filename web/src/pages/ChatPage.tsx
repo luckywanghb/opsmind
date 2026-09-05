@@ -41,8 +41,7 @@ function Decision({ response }: { response: ChatResponse }) {
     <section className="result-block" aria-label="动作决策">
       <div className="result-block__heading"><span>02</span><div><h3>动作决策</h3><p>Action Decision</p></div></div>
       <div className="decision-line"><span>下一步动作</span><ActionBadge action={response.decision.action} /></div>
-      <dl className="decision-copy"><div><dt>目标</dt><dd>{response.decision.goal}</dd></div><div><dt>决策摘要</dt><dd>{response.decision.rationale}</dd></div></dl>
-      <p className="phase-note"><Icon name="check" /> 当前运行已完成动作决策，后续节点以右侧实际 trace 为准。</p>
+      <p className="phase-note"><Icon name="check" /> 当前运行已完成动作决策；目标与理由仅用于控制流程，事实以已引用来源字段为准。</p>
     </section>
   );
 }
@@ -56,7 +55,7 @@ function FinalResult({ response }: { response: ChatResponse }) {
       <div className="result-block__heading"><span>03</span><div><h3>结果与回复</h3><p>Result & Reply</p></div></div>
       {response.final_reply && <p className="final-reply">{response.final_reply}</p>}
       {handoff && <p className="handoff-note">需要转人工继续处理。</p>}
-      {hasEvidence && <div className="evidence-list"><span className="evidence-list__label">已复核证据</span>{response.evidence?.map((item, index) => <div key={`${item.source}-${index}`}><code>{item.source}</code><p>{item.summary}</p></div>)}</div>}
+      {hasEvidence && <div className="evidence-list"><span className="evidence-list__label">已复核证据</span>{response.evidence?.map((item, index) => <div key={`${item.evidence_id ?? item.source}-${index}`}><code>{item.evidence_id ? `${item.evidence_id} · ` : ""}{item.source}</code><p>{item.summary}</p></div>)}</div>}
     </section>
   );
 }

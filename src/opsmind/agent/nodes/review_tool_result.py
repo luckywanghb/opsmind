@@ -10,6 +10,7 @@ from pydantic import JsonValue, ValidationError
 
 from opsmind.agent.context import build_tool_review_context
 from opsmind.agent.diagnostics import attach_structured_node_diagnostic
+from opsmind.agent.grounding import stable_evidence_items
 from opsmind.agent.prompts import (
     TOOL_RESULT_REVIEW_SYSTEM_PROMPT,
     language_instruction,
@@ -32,6 +33,24 @@ _MAX_COMPACT_TEXT = 2_000
 _MAX_FACTS = 50
 
 
+def _next_evidence_id(items: Iterable[EvidenceItem]) -> str:
+    """Allocate a deterministic ID in the current run's evidence sequence."""
+
+    # Allocate against the same detached, gap-free projection used by terminal
+    # contexts.  Otherwise a caller-supplied item without an ID could be
+    # transiently projected as E1 while this newly reviewed item also receives
+    # E1 in canonical state, causing a terminal reference to shift sources.
+    used = {
+        item.evidence_id
+        for item in stable_evidence_items(items)
+        if item.evidence_id is not None
+    }
+    number = 1
+    while f"E{number}" in used:
+        number += 1
+    return f"E{number}"
+
+
 def _compact_text(value: str, *, limit: int = _MAX_COMPACT_TEXT) -> str:
     """Bound model-provided text before it can enter canonical state."""
 
@@ -45,6 +64,12 @@ def _compact_facts(values: Iterable[str]) -> list[str]:
         for value in list(values)[:_MAX_FACTS]
         if isinstance(value, str) and value.strip()
     ]
+
+
+def _evidence_summary(execution: ToolInvocationResult) -> str:
+    """Describe the typed result without trusting model review prose."""
+
+    return f"{execution.tool_name}: {execution.status}"
 
 
 def _result_payload(execution: ToolInvocationResult) -> dict[str, JsonValue]:
@@ -135,8 +160,12 @@ async def review_tool_result(
     confirmed = _compact_facts(output.confirmed_facts)
     unresolved = _compact_facts(output.unresolved_questions)
     evidence = EvidenceItem(
+        evidence_id=_next_evidence_id(canonical_state.evidence.items),
         source=execution.tool_name,
-        summary=summary,
+        # The model's review summary remains control-plane context in
+        # ``ToolState``. It is not authoritative evidence and therefore never
+        # enters the public evidence item or final renderer.
+        summary=_evidence_summary(execution),
         key_fields=payload,
         metadata={
             "result_status": execution.status,

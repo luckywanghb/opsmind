@@ -23,6 +23,67 @@ class ToolMode(StrEnum):
     WRITE = "WRITE"
 
 
+class ToolFieldValueKind(StrEnum):
+    """Presentation-safe formatting kind for one typed response field."""
+
+    TEXT = "text"
+    IDENTIFIER = "identifier"
+    ENUM = "enum"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    LIST = "list"
+    JSON = "json"
+
+
+class ToolFieldPresentation(StateModel):
+    """Bounded metadata used by the deterministic grounded renderer.
+
+    This is deliberately presentation metadata, not a business rule.  The
+    response model remains the authority for which fields exist and their
+    values; this contract only supplies a localized label/unit and a safe
+    formatting hint for a field that the model selected by reference.
+    """
+
+    label_zh: str = Field(min_length=1, max_length=100)
+    label_en: str | None = Field(default=None, max_length=100)
+    unit_zh: str | None = Field(default=None, max_length=40)
+    unit_en: str | None = Field(default=None, max_length=40)
+    value_kind: ToolFieldValueKind = ToolFieldValueKind.TEXT
+    # Optional typed semantic marker used only to choose a bounded limitation
+    # sentence. It never routes a tool or changes the value being reported.
+    semantic: str = Field(default="fact", min_length=1, max_length=40)
+
+    @classmethod
+    def from_schema_field(
+        cls,
+        field_name: str,
+        schema: dict[str, object] | None = None,
+    ) -> ToolFieldPresentation:
+        """Create a conservative presentation for an unannotated field.
+
+        JSON Schema titles/types are typed contract metadata. The fallback
+        never attempts to infer a business label from an intent or user
+        wording, so custom read-only tools remain renderable without adding a
+        semantic Python branch.
+        """
+
+        schema = schema or {}
+        field_type = schema.get("type")
+        if field_type in {"integer", "number"}:
+            kind = ToolFieldValueKind.NUMBER
+        elif field_type == "boolean":
+            kind = ToolFieldValueKind.BOOLEAN
+        elif field_type == "array":
+            kind = ToolFieldValueKind.LIST
+        elif field_type == "object":
+            kind = ToolFieldValueKind.JSON
+        else:
+            kind = ToolFieldValueKind.TEXT
+        title = schema.get("title")
+        label = title if isinstance(title, str) and title.strip() else field_name
+        return cls(label_zh=label, value_kind=kind)
+
+
 class ToolResultStatus(StrEnum):
     """Whether a typed adapter result contains usable enterprise evidence."""
 
@@ -180,6 +241,8 @@ __all__ = [
     "PermissionQueryRequest",
     "PermissionQueryResponse",
     "ToolExecutionSummary",
+    "ToolFieldPresentation",
+    "ToolFieldValueKind",
     "ToolMode",
     "ToolRequest",
     "ToolResponse",

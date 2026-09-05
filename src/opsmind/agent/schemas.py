@@ -7,9 +7,10 @@ corresponding section of the canonical :class:`OpsAgentState`.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from opsmind.state import (
     AgentAction,
@@ -128,9 +129,158 @@ class ToolResultReviewOutput(StateModel):
         return value
 
 
+class GroundedTerminalMode(StrEnum):
+    """Terminal modes accepted by a grounded response plan."""
+
+    REPLY = "REPLY"
+    ASK_USER = "ASK_USER"
+    TRANSFER_HUMAN = "TRANSFER_HUMAN"
+    END_CONVERSATION = "END_CONVERSATION"
+
+
+class ResponsePresentationIntent(StrEnum):
+    """Small, non-factual vocabulary for deterministic presentation."""
+
+    FACTS = "FACTS"
+    FACT_SUMMARY = "FACT_SUMMARY"
+    FACTS_WITH_LIMITATION = "FACTS_WITH_LIMITATION"
+    LIMITED_FACTS = "LIMITED_FACTS"
+    NOT_FOUND = "NOT_FOUND"
+    CLARIFICATION = "CLARIFICATION"
+    HANDOFF = "HANDOFF"
+    CLOSE = "CLOSE"
+
+
+class GroundingLimitation(StrEnum):
+    """Bounded limitation templates available to a response plan."""
+
+    NONE = "NONE"
+    CAUSE_UNAVAILABLE = "CAUSE_UNAVAILABLE"
+    THRESHOLD_UNAVAILABLE = "THRESHOLD_UNAVAILABLE"
+    ENTITLEMENT_UNAVAILABLE = "ENTITLEMENT_UNAVAILABLE"
+    REMEDIATION_UNAVAILABLE = "REMEDIATION_UNAVAILABLE"
+    MATCH_UNAVAILABLE = "MATCH_UNAVAILABLE"
+    SCOPE_UNAVAILABLE = "SCOPE_UNAVAILABLE"
+    EVIDENCE_INSUFFICIENT = "EVIDENCE_INSUFFICIENT"
+    MISSING_CAUSE = "MISSING_CAUSE"
+    MISSING_THRESHOLD = "MISSING_THRESHOLD"
+
+
+class ClarificationTarget(StrEnum):
+    """Safe fixed targets for a model-selected clarification prompt."""
+
+    GENERIC = "GENERIC"
+    IDENTIFIER = "IDENTIFIER"
+    USER_ID = "USER_ID"
+    SYSTEM_ID = "SYSTEM_ID"
+    SITE = "SITE"
+    SCOPE = "SCOPE"
+
+
+class EvidenceReference(StateModel):
+    """Reference to one field in one run-local compact evidence item.
+
+    The reference carries no value or prose.  The harness resolves both the
+    evidence ID and canonical field path against the typed tool response before
+    a renderer can use it.
+    """
+
+    evidence_id: str = Field(
+        min_length=2,
+        max_length=7,
+        pattern=r"^E[1-9][0-9]{0,5}$",
+        validation_alias=AliasChoices("evidence_id", "evidenceID", "id"),
+    )
+    path: str = Field(
+        min_length=1,
+        max_length=200,
+        validation_alias=AliasChoices("path", "field_path", "field"),
+    )
+
+    @field_validator("path")
+    @classmethod
+    def reject_invalid_path_text(cls, value: str) -> str:
+        if not value.strip() or any(character.isspace() for character in value):
+            raise ValueError("evidence path must be a non-blank token")
+        if ".." in value or value.startswith("/") or value.endswith("/"):
+            raise ValueError("evidence path must be canonical")
+        return value
+
+
+class GroundedResponsePlanOutput(StateModel):
+    """Transient model output consumed by the deterministic final renderer.
+
+    There is intentionally no ``message``, ``claim``, ``answer`` or other
+    free-form factual field.  The model selects a terminal/presentation intent
+    and relevant references; values and limitation wording are supplied by
+    typed evidence contracts and fixed renderer templates.
+    """
+
+    terminal_mode: GroundedTerminalMode = Field(
+        validation_alias=AliasChoices(
+            "terminal_mode",
+            "terminal_action",
+            "terminal",
+            "terminal_intent",
+            "action",
+            "mode",
+        )
+    )
+    presentation_intent: ResponsePresentationIntent = Field(
+        validation_alias=AliasChoices(
+            "presentation_intent",
+            "presentation",
+            "intent",
+        )
+    )
+    evidence_references: list[EvidenceReference] = Field(
+        default_factory=list,
+        max_length=50,
+        validation_alias=AliasChoices(
+            "evidence_references",
+            "evidence_refs",
+            "references",
+            "refs",
+            "evidence",
+        ),
+    )
+    limitation: GroundingLimitation = Field(
+        default=GroundingLimitation.NONE,
+        validation_alias=AliasChoices("limitation", "limitation_kind"),
+    )
+    clarification_target: ClarificationTarget = ClarificationTarget.GENERIC
+
+    @model_validator(mode="after")
+    def validate_terminal_presentation(self) -> GroundedResponsePlanOutput:
+        if (
+            self.terminal_mode is GroundedTerminalMode.END_CONVERSATION
+            and self.evidence_references
+        ):
+            raise ValueError("END_CONVERSATION response plans cannot cite evidence")
+        if (
+            self.terminal_mode is GroundedTerminalMode.ASK_USER
+            and self.presentation_intent is ResponsePresentationIntent.HANDOFF
+        ):
+            raise ValueError("ASK_USER plans cannot use HANDOFF presentation")
+        if (
+            self.terminal_mode is GroundedTerminalMode.TRANSFER_HUMAN
+            and self.presentation_intent is ResponsePresentationIntent.CLARIFICATION
+        ):
+            raise ValueError(
+                "TRANSFER_HUMAN plans cannot use CLARIFICATION presentation"
+            )
+        return self
+
+
 __all__ = [
     "ActionDecisionOutput",
+    "ClarificationTarget",
+    "EvidenceReference",
+    "GroundedResponsePlanOutput",
+    "GroundedTerminalMode",
+    "GroundingLimitation",
     "RequestUnderstandingOutput",
+    "ResponsePresentationIntent",
     "ToolResultReviewOutput",
     "ToolSelectionOutput",
 ]

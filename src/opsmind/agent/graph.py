@@ -10,6 +10,8 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from opsmind.agent.diagnostics import attach_structured_node_diagnostic
+from opsmind.agent.grounding import GroundingValidationError
 from opsmind.agent.nodes import (
     decide_action,
     generate_clarification,
@@ -20,7 +22,12 @@ from opsmind.agent.nodes import (
     understand_request,
 )
 from opsmind.agent.prompts import language_instruction
-from opsmind.models import ModelGateway, ModelProfile, ModelTask
+from opsmind.models import (
+    ModelGateway,
+    ModelProfile,
+    ModelStructuredOutputError,
+    ModelTask,
+)
 from opsmind.state import (
     AgentAction,
     DecisionState,
@@ -147,13 +154,6 @@ def _tool_signature(tool_name: str, arguments: Mapping[str, object]) -> str:
     )
 
 
-def _review_summary(update: dict[str, object]) -> str:
-    tool = update.get("tool")
-    if isinstance(tool, ToolState) and tool.review_summary:
-        return tool.review_summary[:2_000]
-    return "Tool result review completed."
-
-
 def _action_route(state: OpsAgentState) -> str:
     """Route only on the model-selected control action."""
 
@@ -255,7 +255,9 @@ def build_ops_graph(
                 task=ModelTask.ACTION_DECISION,
                 profile=ModelProfile.CHEAP.value,
                 status="completed",
-                summary=f"{decision.action}: {decision.goal}",
+                # Goal/rationale are control-plane model text. Keep public
+                # trace deterministic and action-qualified only.
+                summary=decision.action.value,
             )
         )
         return {
@@ -454,14 +456,38 @@ def build_ops_graph(
                 task=ModelTask.TOOL_RESULT_REVIEW,
                 profile=ModelProfile.CHEAP.value,
                 status="completed",
-                summary=_review_summary(update),
+                # Review prose is advisory control-plane text. Public trace
+                # records the actual node outcome without presenting that
+                # prose as an authoritative business fact.
+                summary="TOOL_RESULT_REVIEW_COMPLETED",
             )
         )
         return update
 
     async def clarification_node(state: OpsAgentState) -> dict[str, Any]:
         canonical = _canonical(state)
-        update = await generate_clarification(canonical, gateway, registry)
+        try:
+            update = await generate_clarification(canonical, gateway, registry)
+        except (GroundingValidationError, ToolRuntimeError):
+            events.append(
+                AgentTraceEvent(
+                    node="generate_clarification",
+                    task=ModelTask.CLARIFICATION,
+                    profile=ModelProfile.CHEAP.value,
+                    status="failed",
+                    summary="GROUNDING_VALIDATION_FAILED",
+                )
+            )
+            error = ModelStructuredOutputError(
+                "grounded clarification plan failed evidence validation"
+            )
+            attach_structured_node_diagnostic(
+                error,
+                node="generate_clarification",
+                expected_schema_name="GroundedResponsePlanOutput",
+                logical_profile=ModelProfile.CHEAP.value,
+            )
+            raise error from None
         events.append(
             AgentTraceEvent(
                 node="generate_clarification",
@@ -479,7 +505,28 @@ def build_ops_graph(
 
     async def response_node(state: OpsAgentState) -> dict[str, Any]:
         canonical = _canonical(state)
-        update = await generate_response(canonical, gateway, registry)
+        try:
+            update = await generate_response(canonical, gateway, registry)
+        except (GroundingValidationError, ToolRuntimeError):
+            events.append(
+                AgentTraceEvent(
+                    node="generate_response",
+                    task=ModelTask.RESPONSE_GENERATION,
+                    profile=ModelProfile.CHEAP.value,
+                    status="failed",
+                    summary="GROUNDING_VALIDATION_FAILED",
+                )
+            )
+            error = ModelStructuredOutputError(
+                "grounded response plan failed evidence validation"
+            )
+            attach_structured_node_diagnostic(
+                error,
+                node="generate_response",
+                expected_schema_name="GroundedResponsePlanOutput",
+                logical_profile=ModelProfile.CHEAP.value,
+            )
+            raise error from None
         events.append(
             AgentTraceEvent(
                 node="generate_response",
@@ -497,7 +544,28 @@ def build_ops_graph(
 
     async def handoff_node(state: OpsAgentState) -> dict[str, Any]:
         canonical = _canonical(state)
-        update = await generate_handoff(canonical, gateway, registry)
+        try:
+            update = await generate_handoff(canonical, gateway, registry)
+        except (GroundingValidationError, ToolRuntimeError):
+            events.append(
+                AgentTraceEvent(
+                    node="generate_handoff",
+                    task=ModelTask.HANDOFF_GENERATION,
+                    profile=ModelProfile.CHEAP.value,
+                    status="failed",
+                    summary="GROUNDING_VALIDATION_FAILED",
+                )
+            )
+            error = ModelStructuredOutputError(
+                "grounded handoff plan failed evidence validation"
+            )
+            attach_structured_node_diagnostic(
+                error,
+                node="generate_handoff",
+                expected_schema_name="GroundedResponsePlanOutput",
+                logical_profile=ModelProfile.CHEAP.value,
+            )
+            raise error from None
         events.append(
             AgentTraceEvent(
                 node="generate_handoff",

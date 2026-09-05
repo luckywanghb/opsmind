@@ -6,6 +6,8 @@ from opsmind.tools.contracts import (
     PermissionQueryRequest,
     PermissionQueryResponse,
     ToolExecutionSummary,
+    ToolFieldPresentation,
+    ToolFieldValueKind,
     ToolMode,
     ToolRequest,
     ToolResponse,
@@ -24,6 +26,7 @@ from opsmind.tools.registry import (
     ToolRuntimeError,
     ToolSpec,
     UnknownToolError,
+    UnknownToolFieldError,
 )
 from opsmind.tools.synthetic import (
     INCIDENT_QUERY_NAME,
@@ -49,6 +52,8 @@ __all__ = [
     "ToolCall",
     "ToolExecutionError",
     "ToolExecutionSummary",
+    "ToolFieldPresentation",
+    "ToolFieldValueKind",
     "ToolInvocationResult",
     "ToolMode",
     "ToolPolicyError",
@@ -59,6 +64,7 @@ __all__ = [
     "ToolRuntimeError",
     "ToolSpec",
     "UnknownToolError",
+    "UnknownToolFieldError",
     "WORK_ORDER_QUERY_NAME",
     "WorkOrderQueryRequest",
     "WorkOrderQueryResponse",

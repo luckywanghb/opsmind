@@ -8,10 +8,15 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from opsmind.state import StateModel
-from opsmind.tools.contracts import ToolMode, ToolRequest, ToolResponse
+from opsmind.tools.contracts import (
+    ToolFieldPresentation,
+    ToolMode,
+    ToolRequest,
+    ToolResponse,
+)
 
 TRequest = TypeVar("TRequest", bound=ToolRequest)
 TResponse = TypeVar("TResponse", bound=ToolResponse)
@@ -27,6 +32,15 @@ class UnknownToolError(ToolRuntimeError):
     def __init__(self, tool_name: str) -> None:
         super().__init__(f"unknown tool: {tool_name}")
         self.tool_name = tool_name
+
+
+class UnknownToolFieldError(ToolRuntimeError):
+    """A grounded response plan referenced a field absent from its schema."""
+
+    def __init__(self, tool_name: str, field_name: str) -> None:
+        super().__init__(f"unknown response field for tool {tool_name}")
+        self.tool_name = tool_name
+        self.field_name = field_name
 
 
 class ToolArgumentsError(ToolRuntimeError):
@@ -67,6 +81,17 @@ class ToolSpec(StateModel):
     mode: ToolMode = ToolMode.READ_ONLY
     timeout_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     retry_limit: int = Field(default=0, ge=0)
+    field_presentations: dict[str, ToolFieldPresentation] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices(
+            "field_presentations",
+            "presentation_fields",
+        ),
+        description=(
+            "Optional typed labels and formatting metadata for fields that may "
+            "be selected by a grounded response plan."
+        ),
+    )
 
 
 ToolHandler = Callable[..., Awaitable[ToolResponse]]
@@ -213,6 +238,64 @@ class ToolRegistry:
             "output_schema": _bounded_schema(output_schema),
         }
 
+    def describe_for_response(self, tool_name: str) -> dict[str, object]:
+        """Return typed presentation metadata for grounded response plans.
+
+        The response model schema remains the source of truth for field
+        existence. Explicit metadata is optional; the renderer can derive a
+        conservative field label/format from the schema for a custom tool.
+        """
+
+        registration = self.get(tool_name)
+        schema = registration.response_model.model_json_schema()
+        properties = schema.get("properties")
+        property_map = properties if isinstance(properties, dict) else {}
+        fields: dict[str, object] = {}
+        for name, field_schema in property_map.items():
+            if name == "message":
+                continue
+            metadata = registration.spec.field_presentations.get(name)
+            if metadata is None:
+                metadata = ToolFieldPresentation.from_schema_field(
+                    name,
+                    field_schema if isinstance(field_schema, dict) else None,
+                )
+            fields[name] = metadata.model_dump(mode="json")
+        for name, metadata in registration.spec.field_presentations.items():
+            # Do not expose metadata for fields absent from the typed response
+            # schema; such metadata could otherwise create an unreferenceable
+            # presentation path.
+            if name in property_map:
+                fields[name] = metadata.model_dump(mode="json")
+        return {
+            "name": registration.spec.name,
+            "description": registration.spec.description,
+            "mode": registration.spec.mode.value,
+            "fields": fields,
+        }
+
+    def field_presentation(
+        self,
+        tool_name: str,
+        field_name: str,
+    ) -> ToolFieldPresentation:
+        """Resolve one field's presentation from its registered contract."""
+
+        registration = self.get(tool_name)
+        schema = registration.response_model.model_json_schema()
+        properties = schema.get("properties")
+        property_map = properties if isinstance(properties, dict) else {}
+        field_schema = property_map.get(field_name)
+        if field_name == "message" or field_schema is None:
+            raise UnknownToolFieldError(tool_name, field_name)
+        metadata = registration.spec.field_presentations.get(field_name)
+        if metadata is not None:
+            return metadata.model_copy(deep=True)
+        return ToolFieldPresentation.from_schema_field(
+            field_name,
+            field_schema if isinstance(field_schema, dict) else None,
+        )
+
     def validate_call(self, tool_name: str, arguments: object) -> ToolCall:
         """Validate a model selection without executing an adapter."""
 
@@ -345,4 +428,5 @@ __all__ = [
     "ToolRuntimeError",
     "ToolSpec",
     "UnknownToolError",
+    "UnknownToolFieldError",
 ]

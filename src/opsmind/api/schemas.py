@@ -88,6 +88,7 @@ class AgentTraceStep(ApiModel):
 class ChatEvidence(ApiModel):
     """Compact evidence exposed to the UI without raw adapter payloads."""
 
+    evidence_id: str | None = None
     source: str
     summary: str
     key_fields: FiniteJsonObject = Field(default_factory=dict)

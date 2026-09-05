@@ -16,6 +16,7 @@ from starlette.responses import Response
 
 from opsmind.agent.errors import AgentInputError
 from opsmind.agent.graph import bounded_trace_summary
+from opsmind.agent.grounding import stable_evidence_items
 from opsmind.api.composition import build_runtime
 from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
 from opsmind.api.schemas import (
@@ -99,7 +100,9 @@ def _trace_summary(result: AgentRunResult, node: str) -> str:
             f"{understanding.primary_intent} / {understanding.request_type}"
         )
     decision = result.state.decision
-    return bounded_trace_summary(f"{decision.action}: {decision.goal}")
+    return bounded_trace_summary(
+        decision.action.value if decision.action is not None else "ACTION_UNKNOWN"
+    )
 
 
 def _trace(result: AgentRunResult) -> list[AgentTraceStep]:
@@ -166,7 +169,7 @@ def _chat_response(
         final_reply=result.state.response.message,
         evidence=[
             ChatEvidence.model_validate(item.model_dump())
-            for item in result.state.evidence.items
+            for item in stable_evidence_items(result.state.evidence.items)
         ],
         handoff=handoff,
     )

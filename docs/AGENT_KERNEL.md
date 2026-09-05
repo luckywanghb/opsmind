@@ -50,13 +50,25 @@ is selected by a fresh `decide_action` model call; review recommendations are
 advisory and are not Python business routing.  Review receives the selected
 tool's bounded output schema/semantics and available capability metadata.
 
-The terminal text nodes use `CLARIFICATION`, `RESPONSE_GENERATION`, and
-`HANDOFF_GENERATION`.  For Chinese input, prompts require Simplified Chinese
-for user-facing natural language while enum values, schema keys, and tool
-names remain English.  All three use the same bounded-answer and grounding
-policy: unresolved questions do not automatically force clarification, and
-terminal text cannot claim unexecuted calls, unavailable capabilities, writes,
-or unsupported threshold/progression/normality conclusions.
+Terminal nodes use `CLARIFICATION`, `RESPONSE_GENERATION`, and
+`HANDOFF_GENERATION` to request a transient `GroundedResponsePlanOutput`, not
+free-form user text. The plan contains only a terminal mode, bounded
+presentation/limitation enums, clarification target, and
+`EvidenceReference` (`evidence_id` plus canonical field path) values. For
+Chinese input, prompts require Simplified Chinese for user-facing natural
+language while enum values, schema keys, and tool names remain English.
+
+The harness resolves every plan reference against stable per-run compact
+evidence IDs and the selected tool's typed response schema. Unknown IDs,
+unknown/missing/null fields, duplicate refs, extra prose fields, and terminal
+mode mismatches fail closed before any reply is rendered. The deterministic
+renderer obtains labels, units, value kinds and semantic markers from typed
+tool presentation metadata, and emits source-qualified Simplified-Chinese
+facts plus fixed limitation wording. It never consumes DecisionState goals or
+rationales, review prose, or model-generated answer text. Thus elapsed time,
+source flags, status values, permission facts and incident facts stay exactly
+at their declared source meaning; absent cause/SLA/threshold/entitlement or
+remediation evidence is stated as a limitation rather than inferred.
 
 ## Runtime limits and safety
 
@@ -70,10 +82,17 @@ execution.
 ## Trace and API boundary
 
 Actual model and harness nodes emit safe trace events containing node, logical
-task/profile, status, and a bounded summary.  Prompts, chain-of-thought,
-provider payloads, credentials, and raw tool results are not exposed.  The
-Chat API returns terminal status, optional final reply, compact evidence,
-handoff data, and this actual trace.
+task/profile, status, and a deterministic action/status summary. Decision
+``goal``/``rationale`` and review prose remain control-plane state only; they
+are not authoritative business facts in a public trace or UI. Prompts,
+chain-of-thought, provider payloads, credentials, and raw tool results are not
+exposed. Final text is produced only after a typed response plan selects
+run-local evidence IDs/paths, deterministic validation resolves every field,
+and the Simplified-Chinese renderer formats values from registered tool field
+contracts. Any invalid reference or missing required field fails closed before
+the API can expose a partial reply. The Chat API returns terminal status,
+optional grounded final reply, compact evidence with stable per-run IDs,
+handoff data, and this action/status-only trace.
 
 Structured model-node failures additionally carry an internal,
 request-correlated diagnostic containing only the node, expected response

@@ -17,6 +17,8 @@ from opsmind.tools.contracts import (
     IncidentQueryResponse,
     PermissionQueryRequest,
     PermissionQueryResponse,
+    ToolFieldPresentation,
+    ToolFieldValueKind,
     ToolResultStatus,
     WorkOrderQueryRequest,
     WorkOrderQueryResponse,
@@ -32,6 +34,150 @@ from opsmind.tools.registry import (
 WORK_ORDER_QUERY_NAME = "work_order_query"
 PERMISSION_QUERY_NAME = "permission_query"
 INCIDENT_QUERY_NAME = "incident_query"
+
+
+def _field(
+    label_zh: str,
+    *,
+    label_en: str | None = None,
+    unit_zh: str | None = None,
+    unit_en: str | None = None,
+    value_kind: ToolFieldValueKind = ToolFieldValueKind.TEXT,
+    semantic: str = "fact",
+) -> ToolFieldPresentation:
+    """Declare localized presentation metadata for a typed source field."""
+
+    return ToolFieldPresentation(
+        label_zh=label_zh,
+        label_en=label_en,
+        unit_zh=unit_zh,
+        unit_en=unit_en,
+        value_kind=value_kind,
+        semantic=semantic,
+    )
+
+
+_WORK_ORDER_PRESENTATION: Mapping[str, ToolFieldPresentation] = MappingProxyType(
+    {
+        "result_status": _field(
+            "查询结果状态",
+            label_en="Result status",
+            value_kind=ToolFieldValueKind.ENUM,
+            semantic="result_status",
+        ),
+        "work_order_id": _field(
+            "工单编号",
+            label_en="Work order ID",
+            value_kind=ToolFieldValueKind.IDENTIFIER,
+        ),
+        "status": _field(
+            "状态",
+            label_en="Status",
+            value_kind=ToolFieldValueKind.ENUM,
+            semantic="status",
+        ),
+        "current_node": _field(
+            "当前节点",
+            label_en="Current node",
+            semantic="fact",
+        ),
+        "current_handler": _field(
+            "当前处理人",
+            label_en="Current handler",
+            value_kind=ToolFieldValueKind.IDENTIFIER,
+            semantic="owner",
+        ),
+        "waiting_hours": _field(
+            "已等待",
+            label_en="Elapsed waiting",
+            unit_zh=" 小时",
+            unit_en="hours",
+            value_kind=ToolFieldValueKind.NUMBER,
+            semantic="duration",
+        ),
+        "abnormal": _field(
+            "源异常标记",
+            label_en="Source anomaly flag",
+            value_kind=ToolFieldValueKind.BOOLEAN,
+            semantic="source_flag",
+        ),
+    }
+)
+
+_PERMISSION_PRESENTATION: Mapping[str, ToolFieldPresentation] = MappingProxyType(
+    {
+        "result_status": _field(
+            "查询结果状态",
+            label_en="Result status",
+            value_kind=ToolFieldValueKind.ENUM,
+            semantic="result_status",
+        ),
+        "user_id": _field(
+            "用户标识",
+            label_en="User ID",
+            value_kind=ToolFieldValueKind.IDENTIFIER,
+        ),
+        "system_id": _field(
+            "系统标识",
+            label_en="System ID",
+            value_kind=ToolFieldValueKind.IDENTIFIER,
+        ),
+        "roles": _field(
+            "角色",
+            label_en="Roles",
+            value_kind=ToolFieldValueKind.LIST,
+            semantic="role",
+        ),
+        "permissions": _field(
+            "已分配权限",
+            label_en="Permissions",
+            value_kind=ToolFieldValueKind.LIST,
+            semantic="permission",
+        ),
+        "missing_permissions": _field(
+            "缺失权限",
+            label_en="Missing permissions",
+            value_kind=ToolFieldValueKind.LIST,
+            semantic="missing_permission",
+        ),
+    }
+)
+
+_INCIDENT_PRESENTATION: Mapping[str, ToolFieldPresentation] = MappingProxyType(
+    {
+        "result_status": _field(
+            "查询结果状态",
+            label_en="Result status",
+            value_kind=ToolFieldValueKind.ENUM,
+            semantic="result_status",
+        ),
+        "system_id": _field(
+            "系统标识",
+            label_en="System ID",
+            value_kind=ToolFieldValueKind.IDENTIFIER,
+        ),
+        "site": _field("站点", label_en="Site", semantic="scope"),
+        "site_id": _field(
+            "站点标识",
+            label_en="Site ID",
+            value_kind=ToolFieldValueKind.IDENTIFIER,
+            semantic="scope",
+        ),
+        "scope": _field("查询范围", label_en="Scope", semantic="scope"),
+        "incident_id": _field(
+            "事件编号",
+            label_en="Incident ID",
+            value_kind=ToolFieldValueKind.IDENTIFIER,
+        ),
+        "incident_status": _field(
+            "事件状态",
+            label_en="Incident status",
+            value_kind=ToolFieldValueKind.ENUM,
+            semantic="status",
+        ),
+        "impact": _field("影响描述", label_en="Impact", semantic="impact"),
+    }
+)
 
 
 # MappingProxyType prevents accidental mutation of module-level fixtures.  A
@@ -183,12 +329,14 @@ def _registration(
         WorkOrderQueryResponse | PermissionQueryResponse | IncidentQueryResponse
     ],
     handler: ToolHandler,
+    field_presentations: Mapping[str, ToolFieldPresentation],
 ) -> RegisteredTool:
     return RegisteredTool(
         spec=ToolSpec(
             name=name,
             description=description,
             mode=ToolMode.READ_ONLY,
+            field_presentations=dict(field_presentations),
         ),
         request_model=request_model,
         response_model=response_model,
@@ -217,6 +365,7 @@ class SyntheticToolAdapters:
                     request_model=WorkOrderQueryRequest,
                     response_model=WorkOrderQueryResponse,
                     handler=self.work_order_query,
+                    field_presentations=_WORK_ORDER_PRESENTATION,
                 ),
                 _registration(
                     name=PERMISSION_QUERY_NAME,
@@ -226,6 +375,7 @@ class SyntheticToolAdapters:
                     request_model=PermissionQueryRequest,
                     response_model=PermissionQueryResponse,
                     handler=self.permission_query,
+                    field_presentations=_PERMISSION_PRESENTATION,
                 ),
                 _registration(
                     name=INCIDENT_QUERY_NAME,
@@ -235,6 +385,7 @@ class SyntheticToolAdapters:
                     request_model=IncidentQueryRequest,
                     response_model=IncidentQueryResponse,
                     handler=self.incident_query,
+                    field_presentations=_INCIDENT_PRESENTATION,
                 ),
             ]
         )

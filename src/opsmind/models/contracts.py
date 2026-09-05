@@ -32,6 +32,10 @@ class ModelTask(StrEnum):
     CLARIFICATION = "CLARIFICATION"
     RESPONSE_GENERATION = "RESPONSE_GENERATION"
     HANDOFF_GENERATION = "HANDOFF_GENERATION"
+    # Grounded response planning uses the existing response-generation task
+    # identity so provider/API consumers that know the Phase-1 task set remain
+    # compatible while callers can name the new typed boundary explicitly.
+    GROUNDED_RESPONSE_PLAN = "RESPONSE_GENERATION"
 
 
 class ModelRole(StrEnum):
