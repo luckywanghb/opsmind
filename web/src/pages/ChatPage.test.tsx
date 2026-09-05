@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ChatErrorState, ChatPage } from "./ChatPage";
-import { sendChat } from "../api/opsmind";
+import { OpsMindApiError, sendChat } from "../api/opsmind";
 
 vi.mock("../api/opsmind", async () => {
   const actual = await vi.importActual<typeof import("../api/opsmind")>("../api/opsmind");
@@ -72,6 +72,26 @@ it("renders a safe error state with its troubleshooting id", () => {
   expect(onRetry).toHaveBeenCalledOnce();
 });
 
+it("does not retain the previous trace while a later request fails", async () => {
+  mockedSendChat
+    .mockResolvedValueOnce(successfulResponse)
+    .mockRejectedValueOnce(new OpsMindApiError("MODEL_INVOCATION_FAILED", "模型服务暂时不可用，请稍后重试。", "req-err", 502));
+  render(<ChatPage />);
+  const input = screen.getByLabelText("输入运维问题");
+
+  fireEvent.change(input, { target: { value: "first" } });
+  fireEvent.click(screen.getByLabelText("发送消息"));
+  await screen.findByText("WORKFLOW_ISSUE");
+
+  fireEvent.change(input, { target: { value: "second" } });
+  fireEvent.click(screen.getByLabelText("发送消息"));
+  await screen.findByRole("alert");
+
+  const panel = screen.getByLabelText("Agent 运行详情");
+  expect(panel).not.toHaveTextContent("work_order_query");
+  expect(panel).toHaveTextContent("提交请求后将显示实际执行节点。");
+});
+
 it("does not label a completed response as done when no final response exists", async () => {
   const falseCompleted = {
     ...successfulResponse,
@@ -85,5 +105,23 @@ it("does not label a completed response as done when no final response exists", 
   fireEvent.click(screen.getByLabelText("发送消息"));
 
   await screen.findByText("以下内容来自本次真实 Agent 运行。");
-  expect(screen.queryByText("已完成请求")).not.toBeInTheDocument();
+  expect(screen.queryByText("已完成请求", { exact: true })).not.toBeInTheDocument();
+});
+
+it("keeps a legitimate closed no-reply response out of the completed state", async () => {
+  mockedSendChat.mockResolvedValue({
+    ...successfulResponse,
+    status: "closed",
+    final_status: "CLOSED",
+    final_reply: null,
+    evidence: [],
+    handoff: null,
+  });
+  render(<ChatPage />);
+  fireEvent.change(screen.getByLabelText("输入运维问题"), { target: { value: "thanks" } });
+  fireEvent.click(screen.getByLabelText("发送消息"));
+
+  await screen.findByText("以下内容来自本次真实 Agent 运行。");
+  expect(screen.queryByText("已完成请求", { exact: true })).not.toBeInTheDocument();
+  expect(screen.getByText("已完成请求分析")).toBeInTheDocument();
 });
