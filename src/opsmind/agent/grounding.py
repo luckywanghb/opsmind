@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
+from unicodedata import category
 
 from pydantic import JsonValue, ValidationError
 
@@ -329,6 +330,7 @@ def _escape_untrusted_text(value: str) -> str:
             codepoint < 0x20
             or 0x7F <= codepoint <= 0x9F
             or codepoint in {0x2028, 0x2029}
+            or category(character) == "Cf"
         ):
             escaped.append(f"\\u{codepoint:04x}")
         # Keep ordinary identifiers such as ``EQUIPMENT_VIEW`` unchanged;

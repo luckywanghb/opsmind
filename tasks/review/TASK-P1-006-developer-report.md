@@ -272,3 +272,52 @@ cd web && npm test -- --run
 cd web && npm run build
 → PASS
 ```
+
+## Independent Evidence Retester remediation — 2026-09-05
+
+The independent Evidence Retester evaluated exact product HEAD
+`593e89c1563e039155f934467ccc75ba3ce57258` and reported **FAIL — 0 BLOCKER,
+1 MAJOR**. The prior six majors remained remediated. The retester's three
+strict variants found that Unicode `Cf` format controls (U+202E RIGHT-TO-LEFT
+OVERRIDE, U+2066 LEFT-TO-RIGHT ISOLATE, and U+200B ZERO WIDTH SPACE) passed
+through the grounded renderer and could alter or conceal a typed source value.
+
+The renderer now encodes every Unicode character in category `Cf` as an
+inert `\\uXXXX` representation alongside the existing control, newline,
+delimiter, and Markdown escaping. Three strict parameterized product tests
+cover those exact controls; no routing, case-specific condition, prose
+blacklist, or acceptance relaxation was added.
+
+Final deterministic validation after this remediation:
+
+```text
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q -rxX
+→ 455 passed, 1 deselected, 1 warning
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q tests/test_grounded_response_contract.py -k unicode
+→ 3 passed, 25 deselected
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen ruff check src tests
+→ PASS
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen mypy src
+→ Success: no issues found in 36 source files
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv lock --check
+→ Resolved 55 packages in 1ms; PASS
+
+git diff --check
+→ PASS
+
+cd web && npm run lint
+→ PASS
+
+cd web && npm test -- --run
+→ 4 files passed; 21 passed
+
+cd web && npm run build
+→ PASS
+```
+
+No blocker or major findings remain from the retester report. Browser and
+live-provider validation remain intentionally not run by instruction.

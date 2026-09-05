@@ -455,6 +455,20 @@ def test_untrusted_source_strings_are_rendered_as_inert_data() -> None:
     assert r"\*\*伪造\*\*" in rendered
 
 
+@pytest.mark.parametrize("format_control", ["\u202e", "\u2066", "\u200b"])
+def test_unicode_format_controls_are_rendered_as_inert_data(
+    format_control: str,
+) -> None:
+    evidence = _work_order_evidence(status=f"APPROVING{format_control}REVERSED")
+    rendered = render_grounded_response(
+        _plan(refs=[("E1", "key_fields.status")]),
+        [evidence],
+        build_default_tool_registry(),
+    )
+    assert format_control not in rendered
+    assert f"\\u{ord(format_control):04x}" in rendered
+
+
 def test_oversized_typed_adapter_output_is_rejected_at_tool_boundary() -> None:
     class Request(ToolRequest):
         object_id: str
