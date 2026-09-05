@@ -673,11 +673,13 @@ async def run_ops_agent_with_trace(
     state: OpsAgentState,
     gateway: ModelGateway,
     tool_registry: ToolRegistry | None = None,
+    *,
+    trace_events: list[AgentTraceEvent] | None = None,
 ) -> tuple[OpsAgentState, tuple[AgentTraceEvent, ...]]:
     """Run one isolated graph invocation and return safe actual events."""
 
     canonical_state = OpsAgentState.model_validate(state)
-    events: list[AgentTraceEvent] = []
+    events = trace_events if trace_events is not None else []
     registry = tool_registry or build_default_tool_registry()
     graph = build_ops_graph(
         gateway,

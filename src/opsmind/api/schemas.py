@@ -108,6 +108,7 @@ class ChatResponse(ApiModel):
     """Successful response from one bounded Agent-loop run."""
 
     request_id: str
+    run_id: str
     thread_id: str
     status: Literal[
         "decision_ready",
@@ -138,6 +139,7 @@ class ErrorDetail(ApiModel):
     code: str
     message: str
     request_id: str
+    run_id: str | None = None
 
 
 class ErrorResponse(ApiModel):

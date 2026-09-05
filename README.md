@@ -8,6 +8,9 @@ Run the deterministic API and Vite client in separate terminals:
 OPSMIND_MODEL_PROVIDER=mock uv run --frozen uvicorn opsmind.api.app:create_app --factory
 ```
 
+Validated chat runs are persisted to `.opsmind/opsmind.db`. Set
+`OPSMIND_RUN_STORE_PATH` to use a different local database path.
+
 ```bash
 cd web
 npm ci

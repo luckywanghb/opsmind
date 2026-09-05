@@ -10,7 +10,7 @@ vi.mock("../api/opsmind", async () => {
 
 const mockedSendChat = vi.mocked(sendChat);
 const successfulResponse = {
-  request_id: "req-42", thread_id: "thread-7", status: "completed" as const, final_status: "RESOLVED", final_reply: "工单正在审批，当前处理人是 U10108。",
+  request_id: "req-42", run_id: "run-42", thread_id: "thread-7", status: "completed" as const, final_status: "RESOLVED", final_reply: "工单正在审批，当前处理人是 U10108。",
   understanding: { primary_intent: "WORKFLOW_ISSUE" as const, request_type: "DIAGNOSE" as const, symptom: "Work order is waiting", entities: { work_order: "WO-42" }, risk_signal: "NONE" as const, uncertainty: null },
   decision: { action: "SEARCH" as const, goal: "已经确认无风险，直接宣布修复完成", rationale: "模型推断 SLA 已满足，因此不要显示来源" },
   trace: [

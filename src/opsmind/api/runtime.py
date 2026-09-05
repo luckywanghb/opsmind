@@ -107,6 +107,7 @@ class OpsAgentRuntime:
         """Run the kernel with request-local records of completed calls."""
 
         records: list[CompletedInvocation] = []
+        events: list[AgentTraceEvent] = []
         traced_providers = {
             name: _RecordingProvider(provider, records)
             for name, provider in self._gateway.providers.items()
@@ -115,13 +116,22 @@ class OpsAgentRuntime:
             routes=self._gateway.routes,
             providers=traced_providers,
         )
-        result, events = await run_ops_agent_with_trace(
-            state,
-            traced_gateway,
-            self._tool_registry,
-        )
+        try:
+            result, completed_events = await run_ops_agent_with_trace(
+                state,
+                traced_gateway,
+                self._tool_registry,
+                trace_events=events,
+            )
+        except Exception as exc:
+            # This request-local attribute contains only the same safe events
+            # exposed on successful API responses. It gives the persistence
+            # harness partial observability without changing exception types,
+            # graph topology, prompts, or model-owned decisions.
+            exc.__dict__["safe_trace_events"] = tuple(events)
+            raise
         return AgentRunResult(
             state=result,
             invocations=tuple(records),
-            events=events,
+            events=completed_events,
         )

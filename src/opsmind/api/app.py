@@ -8,7 +8,8 @@ from time import perf_counter
 from typing import Annotated, cast
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Path as PathParameter
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -18,6 +19,11 @@ from opsmind.agent.errors import AgentInputError
 from opsmind.agent.graph import bounded_trace_summary
 from opsmind.agent.grounding import stable_evidence_items
 from opsmind.api.composition import build_runtime
+from opsmind.api.run_observability import (
+    normalized_error_code,
+    persist_chat_success,
+    safe_failure_steps,
+)
 from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
 from opsmind.api.schemas import (
     AgentTraceStep,
@@ -36,6 +42,15 @@ from opsmind.models import (
     ModelInvocationError,
     ModelStructuredOutputError,
     StructuredNodeFailureDiagnostic,
+)
+from opsmind.runs import (
+    AgentRun,
+    AgentRunSummary,
+    RunNotFoundError,
+    RunPersistenceError,
+    RunPersistenceService,
+    RunRepository,
+    SQLiteRunRepository,
 )
 from opsmind.state import IdentityState, OpsAgentState
 
@@ -83,12 +98,13 @@ def _error_response(
             code=code,
             message=message,
             request_id=_request_id(request),
+            run_id=getattr(request.state, "run_id", None),
         )
     )
     request_id = payload.error.request_id
     return JSONResponse(
         status_code=status_code,
-        content=payload.model_dump(),
+        content=payload.model_dump(exclude_none=True),
         headers={"X-Request-ID": request_id},
     )
 
@@ -137,6 +153,7 @@ def _chat_response(
     result: AgentRunResult,
     *,
     request_id: str,
+    run_id: str,
     thread_id: str,
 ) -> ChatResponse:
     understanding = ChatUnderstanding.model_validate(
@@ -160,6 +177,7 @@ def _chat_response(
     )
     return ChatResponse(
         request_id=request_id,
+        run_id=run_id,
         thread_id=thread_id,
         status=status,
         final_status=state_status.value if state_status is not None else None,
@@ -179,6 +197,10 @@ def _runtime_dependency(request: Request) -> OpsAgentRuntime:
     return cast(OpsAgentRuntime, request.app.state.runtime)
 
 
+def _run_service_dependency(request: Request) -> RunPersistenceService:
+    return cast(RunPersistenceService, request.app.state.run_persistence)
+
+
 class _RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self,
@@ -196,10 +218,12 @@ class _RequestContextMiddleware(BaseHTTPMiddleware):
         finally:
             elapsed_ms = (perf_counter() - started) * 1_000
             thread_id = getattr(request.state, "thread_id", None)
+            run_id = getattr(request.state, "run_id", None)
             LOGGER.info(
-                "api_request request_id=%s thread_id=%s endpoint=%s "
+                "api_request request_id=%s run_id=%s thread_id=%s endpoint=%s "
                 "status=%d latency_ms=%.3f",
                 request.state.request_id,
+                run_id if isinstance(run_id, str) else "-",
                 thread_id if isinstance(thread_id, str) else "-",
                 request.url.path,
                 status_code,
@@ -211,14 +235,23 @@ def create_app(
     *,
     runtime: OpsAgentRuntime | None = None,
     settings: RuntimeSettings | None = None,
+    run_repository: RunRepository | None = None,
 ) -> FastAPI:
     """Create an explicitly composed and dependency-injectable application."""
 
-    configured_runtime = runtime or build_runtime(
-        settings or RuntimeSettings.from_env()
+    configured_settings = settings or RuntimeSettings.from_env()
+    configured_runtime = runtime or build_runtime(configured_settings)
+    configured_repository = run_repository or SQLiteRunRepository(
+        configured_settings.run_store_path
     )
     app = FastAPI(title="OpsMind API", version="0.1.0")
     app.state.runtime = configured_runtime
+    app.state.run_repository = configured_repository
+    app.state.run_persistence = RunPersistenceService(
+        configured_repository,
+        app_version=app.version,
+        build_sha=configured_settings.build_sha,
+    )
     app.add_middleware(_RequestContextMiddleware)
 
     @app.exception_handler(RequestValidationError)
@@ -245,6 +278,37 @@ def create_app(
             status_code=400,
             code="INVALID_AGENT_INPUT",
             message="Agent input is invalid",
+        )
+
+    @app.exception_handler(RunNotFoundError)
+    async def run_not_found_handler(
+        request: Request,
+        exc: RunNotFoundError,
+    ) -> JSONResponse:
+        del exc
+        return _error_response(
+            request,
+            status_code=404,
+            code="RUN_NOT_FOUND",
+            message="Agent run was not found",
+        )
+
+    @app.exception_handler(RunPersistenceError)
+    async def run_persistence_handler(
+        request: Request,
+        exc: RunPersistenceError,
+    ) -> JSONResponse:
+        LOGGER.error(
+            "run_persistence_unavailable request_id=%s run_id=%s error_type=%s",
+            _request_id(request),
+            getattr(request.state, "run_id", "-"),
+            type(exc).__name__,
+        )
+        return _error_response(
+            request,
+            status_code=503,
+            code="RUN_PERSISTENCE_UNAVAILABLE",
+            message="Agent run persistence is unavailable",
         )
 
     @app.exception_handler(ModelStructuredOutputError)
@@ -306,6 +370,7 @@ def create_app(
             422: {"model": ErrorResponse},
             500: {"model": ErrorResponse},
             502: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
         },
         tags=["agent"],
     )
@@ -316,9 +381,20 @@ def create_app(
             OpsAgentRuntime,
             Depends(_runtime_dependency),
         ],
+        run_persistence: Annotated[
+            RunPersistenceService,
+            Depends(_run_service_dependency),
+        ],
     ) -> ChatResponse:
         thread_id = payload.thread_id or str(uuid4())
         request.state.thread_id = thread_id
+        active_run = run_persistence.start(
+            request_id=_request_id(request),
+            thread_id=thread_id,
+            input_message=payload.message,
+            source_context=payload.source_context,
+        )
+        request.state.run_id = active_run.run_id
         user_id = payload.source_context.get("user_id")
         site_id = payload.source_context.get("site_id")
         state = OpsAgentState(
@@ -333,11 +409,62 @@ def create_app(
                 "current_query": payload.message,
             },
         )
-        result = await agent_runtime.run_with_trace(state)
-        return _chat_response(
-            result,
-            request_id=_request_id(request),
-            thread_id=thread_id,
-        )
+        try:
+            result = await agent_runtime.run_with_trace(state)
+            response = _chat_response(
+                result,
+                request_id=_request_id(request),
+                run_id=active_run.run_id,
+                thread_id=thread_id,
+            )
+        except Exception as exc:
+            try:
+                run_persistence.fail(
+                    active_run,
+                    error_code=normalized_error_code(exc),
+                    steps=safe_failure_steps(exc),
+                )
+            except RunPersistenceError as persistence_error:
+                raise persistence_error from None
+            raise
+
+        persist_chat_success(run_persistence, active_run, response)
+        return response
+
+    @app.get(
+        "/api/v1/runs",
+        response_model=list[AgentRunSummary],
+        responses={503: {"model": ErrorResponse}},
+        tags=["runs"],
+    )
+    async def list_runs(
+        run_persistence: Annotated[
+            RunPersistenceService,
+            Depends(_run_service_dependency),
+        ],
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> list[AgentRunSummary]:
+        return run_persistence.list(limit=limit)
+
+    @app.get(
+        "/api/v1/runs/{run_id}",
+        response_model=AgentRun,
+        responses={
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["runs"],
+    )
+    async def get_run(
+        run_id: Annotated[
+            str,
+            PathParameter(min_length=1, max_length=128),
+        ],
+        run_persistence: Annotated[
+            RunPersistenceService,
+            Depends(_run_service_dependency),
+        ],
+    ) -> AgentRun:
+        return run_persistence.get(run_id)
 
     return app
