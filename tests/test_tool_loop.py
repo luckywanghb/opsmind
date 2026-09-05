@@ -114,6 +114,34 @@ def review(
     }
 
 
+def grounded_response_plan(
+    action: str = "REPLY",
+    *,
+    refs: Iterable[tuple[str, str]] = (),
+    intent: str | None = None,
+    limitation: str = "NONE",
+    clarification_target: str = "GENERIC",
+) -> dict[str, object]:
+    """Explicit terminal fixture for the evidence-bound renderer."""
+
+    inferred_intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent or inferred_intent,
+        "evidence_references": [
+            {"evidence_id": evidence_id, "path": path}
+            for evidence_id, path in refs
+        ],
+        "limitation": limitation,
+        "clarification_target": clarification_target,
+    }
+
+
 def state(query: str, **identity: object) -> OpsAgentState:
     return OpsAgentState(
         identity=identity,
@@ -269,11 +297,19 @@ def test_d01_work_order_runs_selection_execution_review_redecision_and_reply() -
                 ],
             ),
             decision("REPLY", goal="基于已复核工单事实回复", rationale="证据已足够"),
+            grounded_response_plan(
+                refs=[
+                    ("E1", "key_fields.status"),
+                    ("E1", "key_fields.current_node"),
+                    ("E1", "key_fields.current_handler"),
+                    ("E1", "key_fields.waiting_hours"),
+                    ("E1", "key_fields.abnormal"),
+                ],
+                intent="FACTS_WITH_LIMITATION",
+                limitation="MISSING_THRESHOLD",
+            ),
         ],
-        responses=[
-            "工单正在设备主管审批，当前处理人是 U10108，"
-            "已等待 4 小时，未发现异常。"
-        ],
+        responses=[],
     )
 
     result, events = run_async(
@@ -329,8 +365,9 @@ def test_latest_review_capabilities_and_source_fields_reach_later_contexts() -> 
                 goal="基于当前快照给出有边界的回复",
                 rationale="当前事实足够",
             ),
+            grounded_response_plan(),
         ],
-        responses=["当前可确认工单快照已整理。"],
+        responses=[],
     )
 
     run_async(
@@ -405,8 +442,9 @@ def test_review_recommendation_is_advisory_to_fresh_action_decision(
                 goal="由最新动作决策继续处理",
                 rationale="重新评估当前上下文",
             ),
+            grounded_response_plan(decision_action),
         ],
-        responses=["基于当前信息继续处理。"],
+        responses=[],
     )
 
     result = run_async(
@@ -424,12 +462,13 @@ def test_review_recommendation_is_advisory_to_fresh_action_decision(
         else ModelTask.RESPONSE_GENERATION
     )
     terminal_context = json.loads(provider.history[-1].messages[1].content)
-    assert terminal_context["latest_review"]["recommended_action"] == review_action
+    # Terminal grounding sees only typed source fields; review recommendation
+    # remains advisory control-plane state and is intentionally excluded.
+    assert "latest_review" not in terminal_context
     assert terminal_context["available_tools"][0]["name"] == "work_order_query"
     terminal_prompt = provider.history[-1].messages[0].content
     assert "unexecuted call" in terminal_prompt
-    if decision_action == "ASK_USER":
-        assert "unexecuted call/result" in terminal_prompt
+    assert "result not present in evidence" in terminal_prompt
     assert result.task.status.value == (
         "WAITING_USER" if decision_action == "ASK_USER" else "RESOLVED"
     )
@@ -489,11 +528,19 @@ def test_found_snapshot_can_answer_with_explicit_unknown_threshold() -> None:
                 goal="回复当前快照并说明限制",
                 rationale="当前事实足以给出有边界的回复",
             ),
+            grounded_response_plan(
+                refs=[
+                    ("E1", "key_fields.status"),
+                    ("E1", "key_fields.current_node"),
+                    ("E1", "key_fields.current_handler"),
+                    ("E1", "key_fields.waiting_hours"),
+                    ("E1", "key_fields.abnormal"),
+                ],
+                intent="FACTS_WITH_LIMITATION",
+                limitation="MISSING_THRESHOLD",
+            ),
         ],
-        responses=[
-            "当前节点为夜班审批，处理人为 U90001，已等待 2.5 小时；"
-            "源系统未标记异常。审批阈值未由当前工具返回。"
-        ],
+        responses=[],
     )
 
     result = run_async(
@@ -569,8 +616,32 @@ def test_d02_and_d03_use_model_selected_tool_without_case_routing(
                 goal="基于已复核事实继续处理",
                 rationale="模型判断当前证据足够完成下一步",
             ),
+            grounded_response_plan(
+                "REPLY" if tool_name == "permission_query" else "TRANSFER_HUMAN",
+                refs=(
+                    [
+                        ("E1", "key_fields.roles"),
+                        ("E1", "key_fields.missing_permissions"),
+                    ]
+                    if tool_name == "permission_query"
+                    else [
+                        ("E1", "key_fields.incident_status"),
+                        ("E1", "key_fields.impact"),
+                    ]
+                ),
+                intent=(
+                    "LIMITED_FACTS"
+                    if tool_name == "permission_query"
+                    else "FACTS_WITH_LIMITATION"
+                ),
+                limitation=(
+                    "ENTITLEMENT_UNAVAILABLE"
+                    if tool_name == "permission_query"
+                    else "REMEDIATION_UNAVAILABLE"
+                ),
+            ),
         ],
-        responses=["已根据只读查询结果整理当前事实；未执行任何修改。"],
+        responses=[],
     )
     identity = {"user_id": "U10023"} if tool_name == "permission_query" else {}
 
@@ -612,8 +683,12 @@ def test_unseen_permission_and_incident_inputs_end_gracefully_with_clarification
                 goal="补充可查询的身份信息",
                 rationale="当前只读结果不足以确认权限事实",
             ),
+            grounded_response_plan(
+                "ASK_USER",
+                clarification_target="IDENTIFIER",
+            ),
         ],
-        responses=["请补充准确的用户标识或系统名称，我再继续查询。"],
+        responses=[],
     )
 
     result = run_async(
@@ -666,8 +741,9 @@ def test_privileged_write_selection_is_blocked_without_invoking_handler() -> Non
             ),
             decision("SEARCH", goal="检查请求是否可由当前能力处理"),
             selection("grant_admin", {"work_order_id": "U10023"}),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["该请求超出当前只读能力范围，需要转人工处理。"],
+        responses=[],
     )
 
     result = run_async(
@@ -699,8 +775,13 @@ def test_unknown_tool_and_invalid_arguments_are_rejected_before_execution() -> N
         selection("work_order_query", {"not_work_order_id": "WO-1"}),
     ):
         provider = MockModelProvider(
-            structured_responses=[understanding(), decision(), selection_payload],
-            responses=["工具选择未通过校验，需要转人工继续处理。"],
+            structured_responses=[
+                understanding(),
+                decision(),
+                selection_payload,
+                grounded_response_plan("TRANSFER_HUMAN"),
+            ],
+            responses=[],
         )
         result = run_async(
             run_ops_agent(state("请查询当前状态"), gateway(provider))
@@ -748,8 +829,9 @@ def test_tool_failure_is_reviewed_and_runtime_retry_limit_is_bounded() -> None:
                 goal="转人工处理查询失败",
                 rationale="模型判断当前没有可用证据",
             ),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["查询服务暂时不可用，需要转人工继续处理。"],
+        responses=[],
     )
     initial = state("请查询工单")
     result = run_async(run_ops_agent(initial, gateway(provider), registry))
@@ -802,8 +884,9 @@ def test_repeated_adapter_failures_stop_at_the_retry_limit() -> None:
                 unresolved=["查询服务仍不可用"],
                 action="TRANSFER_HUMAN",
             ),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["查询服务连续失败，已达到安全重试上限，需要转人工。"],
+        responses=[],
     )
 
     result, events = run_async(
@@ -824,8 +907,12 @@ def test_repeated_adapter_failures_stop_at_the_retry_limit() -> None:
 
 def test_max_tool_call_limit_is_enforced_before_selection() -> None:
     provider = MockModelProvider(
-        structured_responses=[understanding(), decision()],
-        responses=["已达到本次运行的安全上限，需要转人工继续处理。"],
+        structured_responses=[
+            understanding(),
+            decision(),
+            grounded_response_plan("TRANSFER_HUMAN"),
+        ],
+        responses=[],
     )
     initial = OpsAgentState(
         conversation={"current_query": "请查询工单"},
@@ -849,8 +936,9 @@ def test_concurrent_runs_copy_registry_and_keep_canonical_states_isolated() -> N
             selection("work_order_query", {"work_order_id": "WO20260001"}),
             review(sufficient=True, summary="已确认工单事实", facts=["等待 4 小时"]),
             decision("REPLY", goal="回复", rationale="证据足够"),
+            grounded_response_plan("REPLY"),
         ],
-        responses=["第一个请求已完成。"],
+        responses=[],
     )
     second_provider = MockModelProvider(
         structured_responses=[
@@ -864,8 +952,9 @@ def test_concurrent_runs_copy_registry_and_keep_canonical_states_isolated() -> N
                 action="ASK_USER",
             ),
             decision("ASK_USER", goal="补充工单号", rationale="证据不足"),
+            grounded_response_plan("ASK_USER", clarification_target="IDENTIFIER"),
         ],
-        responses=["请补充准确工单号。"],
+        responses=[],
     )
     first_state = state("第一个请求")
     second_state = state("第二个请求")
@@ -878,8 +967,10 @@ def test_concurrent_runs_copy_registry_and_keep_canonical_states_isolated() -> N
 
     first, second = run_async(run_both())
 
-    assert first.response.message == "第一个请求已完成。"
-    assert second.response.message == "请补充准确工单号。"
+    assert first.response.message == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
+    assert second.response.message == "请补充要查询的对象标识。"
     assert first_state.conversation.current_query == "第一个请求"
     assert second_state.conversation.current_query == "第二个请求"
 

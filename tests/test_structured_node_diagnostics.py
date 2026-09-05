@@ -68,6 +68,22 @@ def decision(action: str = "SEARCH") -> dict[str, object]:
     }
 
 
+def grounded_plan(action: str = "REPLY") -> dict[str, object]:
+    intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent,
+        "evidence_references": [],
+        "limitation": "NONE",
+        "clarification_target": "GENERIC",
+    }
+
+
 def selection() -> dict[str, object]:
     return {
         "selected_tool": "work_order_query",
@@ -199,14 +215,17 @@ def test_failure_diagnostic_does_not_change_success_trace_semantics() -> None:
             selection(),
             review(),
             decision("REPLY"),
+            grounded_plan(),
         ],
-        responses=["已完成回复"],
+        responses=[],
     )
     run_result = run_async(OpsAgentRuntime(gateway(provider)).run_with_trace(state()))
     result = run_result.state
     events = run_result.events
 
-    assert result.response.message == "已完成回复"
+    assert result.response.message == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
     assert all(event.status == "completed" for event in events)
     assert [event.node for event in events] == [
         "understand_request",

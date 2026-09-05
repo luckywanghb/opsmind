@@ -90,6 +90,22 @@ def decision_response(**overrides: object) -> dict[str, object]:
     return response
 
 
+def grounded_response_plan(action: str = "REPLY") -> dict[str, object]:
+    """Explicit terminal fixture for the evidence-bound renderer."""
+
+    intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent,
+        "evidence_references": [],
+    }
+
+
 def state_for(query: str | None = "当前问题") -> OpsAgentState:
     return OpsAgentState(conversation={"current_query": query})
 
@@ -171,8 +187,9 @@ def test_graph_preserves_rich_canonical_state_while_replacing_only_node_sections
         structured_responses=[
             understanding_response(),
             decision_response(action="REPLY"),
+            grounded_response_plan(),
         ],
-        responses=["已完成回复。"],
+        responses=[],
     )
 
     result = run_async(run_ops_agent(state, make_gateway(provider)))
@@ -281,6 +298,7 @@ def test_decision_request_contains_compact_allowed_projection_only() -> None:
         assert marker not in serialized
     assert payload["evidence"] == [
         {
+            "evidence_id": "E1",
             "source": "tool-summary",
             "summary": "compact-summary",
             "key_fields": {"status": "WAITING"},
@@ -390,8 +408,9 @@ def test_explicit_null_nullable_fields_are_accepted_and_preserved() -> None:
         structured_responses=[
             understanding_response(symptom=None, uncertainty=None),
             decision_response(action="REPLY"),
+            grounded_response_plan(),
         ],
-        responses=["已完成回复。"],
+        responses=[],
     )
     state = state_for()
     before = state.model_copy(deep=True)
@@ -574,8 +593,10 @@ def test_two_concurrent_runs_with_one_shared_mock_provider_keep_query_state_isol
             understanding_response(entities={"run": "two"}),
             decision_response(action="REPLY"),
             decision_response(action="REPLY"),
+            grounded_response_plan(),
+            grounded_response_plan(),
         ],
-        responses=["第一个回复。", "第二个回复。"],
+        responses=[],
     )
     gateway = make_gateway(provider)
     first_state = state_for("query-one")

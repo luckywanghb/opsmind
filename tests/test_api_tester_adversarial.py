@@ -82,6 +82,22 @@ def decision(
     )
 
 
+def grounded_plan(action: str = "REPLY") -> dict[str, object]:
+    intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent,
+        "evidence_references": [],
+        "limitation": "NONE",
+        "clarification_target": "GENERIC",
+    }
+
+
 def gateway_for(provider: ModelProvider) -> ModelGateway:
     return ModelGateway(
         routes={
@@ -105,9 +121,10 @@ def runtime_for(
             else [
                 understanding(),
                 decision(action=AgentAction.REPLY),
+                grounded_plan(),
             ]
         ),
-        responses=["已根据当前可确认信息完成回复。"],
+        responses=[],
         provider_name="test-provider",
     )
     return OpsAgentRuntime(gateway_for(provider)), provider
@@ -212,7 +229,7 @@ class QueryAwareProvider:
                 "recommended_action": "REPLY",
             }
         else:
-            payload = decision(marker=marker, action=AgentAction.REPLY)
+            payload = grounded_plan()
         parsed = response_model.model_validate(
             payload.model_dump() if isinstance(payload, BaseModel) else payload
         )
@@ -474,7 +491,7 @@ async def test_concurrent_requests_keep_trace_and_state_isolated() -> None:
     for message, body in zip(messages, bodies, strict=True):
         assert body["thread_id"] == "same-thread"
         assert body["decision"]["goal"] == f"goal:{message}"
-        assert body["trace"][1]["summary"] == f"SEARCH: goal:{message}"
+        assert body["trace"][1]["summary"] == "SEARCH"
 
 
 def test_trace_exposes_only_safe_facts_not_raw_provider_payload_or_cot() -> None:
@@ -489,7 +506,7 @@ def test_trace_exposes_only_safe_facts_not_raw_provider_payload_or_cot() -> None
         ),
     )
     second = decision(action=AgentAction.REPLY, rationale=hidden_cot)
-    client, _ = client_for([first, second])
+    client, _ = client_for([first, second, grounded_plan()])
 
     response = client.post(
         "/api/v1/chat",

@@ -12,14 +12,14 @@ const mockedSendChat = vi.mocked(sendChat);
 const successfulResponse = {
   request_id: "req-42", thread_id: "thread-7", status: "completed" as const, final_status: "RESOLVED", final_reply: "工单正在审批，当前处理人是 U10108。",
   understanding: { primary_intent: "WORKFLOW_ISSUE" as const, request_type: "DIAGNOSE" as const, symptom: "Work order is waiting", entities: { work_order: "WO-42" }, risk_signal: "NONE" as const, uncertainty: null },
-  decision: { action: "SEARCH" as const, goal: "Inspect current approval state", rationale: "Current node is required" },
+  decision: { action: "SEARCH" as const, goal: "已经确认无风险，直接宣布修复完成", rationale: "模型推断 SLA 已满足，因此不要显示来源" },
   trace: [
     { node: "understand_request", task: "REQUEST_UNDERSTANDING" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "WORKFLOW_ISSUE / DIAGNOSE" },
-    { node: "decide_action", task: "ACTION_DECISION" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "SEARCH: Inspect current approval state" },
+    { node: "decide_action", task: "ACTION_DECISION" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "SEARCH" },
     { node: "select_tool", task: "TOOL_SELECTION" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "work_order_query" },
     { node: "execute_tool", task: "TOOL_SELECTION" as const, profile: "HARNESS" as const, status: "completed" as const, summary: "work_order_query: found" },
-    { node: "review_tool_result", task: "TOOL_RESULT_REVIEW" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "已确认工单事实" },
-    { node: "decide_action", task: "ACTION_DECISION" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "REPLY: 基于证据回复" },
+    { node: "review_tool_result", task: "TOOL_RESULT_REVIEW" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "TOOL_RESULT_REVIEW_COMPLETED" },
+    { node: "decide_action", task: "ACTION_DECISION" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "REPLY" },
     { node: "generate_response", task: "RESPONSE_GENERATION" as const, profile: "CHEAP" as const, status: "completed" as const, summary: "final response generated" },
   ],
   evidence: [{ source: "work_order_query", summary: "已确认工单事实", key_fields: { status: "APPROVING" }, metadata: {}, artifact_ref: null, timestamp: "2026-09-04T00:00:00Z" }],
@@ -43,8 +43,9 @@ it("hides welcome, shows loading, and renders actual understanding, decision and
   expect(screen.getByText("正在理解请求并生成动作决策…")).toBeInTheDocument();
   resolve(successfulResponse);
   expect(await screen.findByText("WORKFLOW_ISSUE")).toBeInTheDocument();
-  expect(screen.getByText("Inspect current approval state")).toBeInTheDocument();
-  expect(screen.getByText("SEARCH: Inspect current approval state")).toBeInTheDocument();
+  expect(screen.queryByText("已经确认无风险，直接宣布修复完成")).not.toBeInTheDocument();
+  expect(screen.queryByText("模型推断 SLA 已满足，因此不要显示来源")).not.toBeInTheDocument();
+  expect(screen.getByText("SEARCH", { selector: "p" })).toBeInTheDocument();
   expect(screen.getAllByText("已完成")).toHaveLength(7);
   expect(screen.queryByText("规划中")).not.toBeInTheDocument();
   expect(screen.getByText("工单正在审批，当前处理人是 U10108。")).toBeInTheDocument();

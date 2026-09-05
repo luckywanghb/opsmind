@@ -63,6 +63,22 @@ def _reply_decision() -> ActionDecisionOutput:
     )
 
 
+def _grounded_plan(action: str = "REPLY") -> dict[str, object]:
+    intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent,
+        "evidence_references": [],
+        "limitation": "NONE",
+        "clarification_target": "GENERIC",
+    }
+
+
 def _selection() -> dict[str, object]:
     return {
         "selected_tool": "work_order_query",
@@ -86,9 +102,11 @@ def _runtime(
 ) -> tuple[OpsAgentRuntime, MockModelProvider]:
     provider = MockModelProvider(
         structured_responses=list(
-            responses or [_understanding(), _reply_decision()]
+            responses
+            if responses is not None
+            else [_understanding(), _reply_decision(), _grounded_plan()]
         ),
-        responses=["已根据当前可确认信息完成回复。"],
+        responses=[],
     )
     gateway = ModelGateway(
         routes={
@@ -137,6 +155,7 @@ def test_chat_runs_canonical_kernel_and_returns_safe_actual_trace() -> None:
             _selection(),
             _review(),
             _reply_decision(),
+            _grounded_plan(),
         ]
     )
     payload = {
@@ -153,7 +172,9 @@ def test_chat_runs_canonical_kernel_and_returns_safe_actual_trace() -> None:
     assert body["thread_id"] == "plant-thread-7"
     assert body["status"] == "completed"
     assert body["final_status"] == "RESOLVED"
-    assert body["final_reply"] == "已根据当前可确认信息完成回复。"
+    assert body["final_reply"] == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
     assert body["understanding"] == _understanding().model_dump(mode="json")
     assert body["decision"] == _reply_decision().model_dump(mode="json")
     assert body["trace"] == [
@@ -169,7 +190,7 @@ def test_chat_runs_canonical_kernel_and_returns_safe_actual_trace() -> None:
             "task": "ACTION_DECISION",
             "profile": "CHEAP",
             "status": "completed",
-            "summary": "SEARCH: Inspect the current approval state",
+            "summary": "SEARCH",
         },
         {
             "node": "select_tool",
@@ -190,14 +211,14 @@ def test_chat_runs_canonical_kernel_and_returns_safe_actual_trace() -> None:
             "task": "TOOL_RESULT_REVIEW",
             "profile": "CHEAP",
             "status": "completed",
-            "summary": "已确认当前状态。",
+            "summary": "TOOL_RESULT_REVIEW_COMPLETED",
         },
         {
             "node": "decide_action",
             "task": "ACTION_DECISION",
             "profile": "CHEAP",
             "status": "completed",
-            "summary": "REPLY: 已获得足够信息，可以回复",
+            "summary": "REPLY",
         },
         {
             "node": "generate_response",

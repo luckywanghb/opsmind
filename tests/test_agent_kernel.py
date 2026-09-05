@@ -107,6 +107,22 @@ def final_decision_response() -> dict[str, object]:
     )
 
 
+def grounded_response_plan(action: str = "REPLY") -> dict[str, object]:
+    """Explicit terminal fixture for the evidence-bound renderer."""
+
+    intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent,
+        "evidence_references": [],
+    }
+
+
 def initial_state(**conversation: object) -> OpsAgentState:
     values: dict[str, object] = {"current_query": "WO20260001为什么一直没处理？"}
     values.update(conversation)
@@ -155,8 +171,9 @@ def test_happy_path_returns_typed_state_and_completes_the_tool_loop() -> None:
             selection_response(),
             review_response(),
             final_decision_response(),
+            grounded_response_plan(),
         ],
-        responses=["工单正在审批。"],
+        responses=[],
     )
 
     result = run_async(run_ops_agent(initial_state(), gateway(provider)))
@@ -167,7 +184,9 @@ def test_happy_path_returns_typed_state_and_completes_the_tool_loop() -> None:
     assert result.understanding.entities["work_order_id"] == "WO20260001"
     assert result.decision.action is AgentAction.REPLY
     assert result.tool.selected_tool == "work_order_query"
-    assert result.response.message == "工单正在审批。"
+    assert result.response.message == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
     assert provider.invocation_count == 6
 
 
@@ -179,8 +198,9 @@ def test_model_calls_use_expected_task_order_and_cheap_profile() -> None:
             selection_response(),
             review_response(),
             final_decision_response(),
+            grounded_response_plan(),
         ],
-        responses=["工单正在审批。"],
+        responses=[],
     )
 
     run_async(run_ops_agent(initial_state(), gateway(provider)))
@@ -214,8 +234,9 @@ def test_decision_context_contains_the_first_node_update() -> None:
             selection_response(),
             review_response(),
             final_decision_response(),
+            grounded_response_plan(),
         ],
-        responses=["工单正在审批。"],
+        responses=[],
     )
 
     run_async(run_ops_agent(initial_state(), gateway(provider)))
@@ -305,8 +326,9 @@ def test_missing_or_whitespace_query_fails_before_gateway_call(
             selection_response(),
             review_response(),
             final_decision_response(),
+            grounded_response_plan(),
         ],
-        responses=["工单正在审批。"],
+        responses=[],
     )
     state = OpsAgentState(conversation={"current_query": query})
 
@@ -419,8 +441,9 @@ def test_run_does_not_mutate_input_or_leak_nested_mutations() -> None:
             selection_response(),
             review_response(),
             final_decision_response(),
+            grounded_response_plan(),
         ],
-        responses=["工单正在审批。"],
+        responses=[],
     )
     state = initial_state()
     before = state.model_copy(deep=True)

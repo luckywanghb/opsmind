@@ -113,6 +113,34 @@ def review(
     }
 
 
+def grounded_response_plan(
+    action: str = "REPLY",
+    *,
+    refs: Iterable[tuple[str, str]] = (),
+    intent: str | None = None,
+    limitation: str = "NONE",
+    clarification_target: str = "GENERIC",
+) -> dict[str, object]:
+    """Explicit terminal fixture for the evidence-bound renderer."""
+
+    inferred_intent = {
+        "REPLY": "FACTS",
+        "ASK_USER": "CLARIFICATION",
+        "TRANSFER_HUMAN": "HANDOFF",
+        "END_CONVERSATION": "CLOSE",
+    }[action]
+    return {
+        "terminal_mode": action,
+        "presentation_intent": intent or inferred_intent,
+        "evidence_references": [
+            {"evidence_id": evidence_id, "path": path}
+            for evidence_id, path in refs
+        ],
+        "limitation": limitation,
+        "clarification_target": clarification_target,
+    }
+
+
 def state(query: str, **identity: object) -> OpsAgentState:
     return OpsAgentState(
         identity=identity,
@@ -261,8 +289,9 @@ def test_malformed_adapter_result_is_reviewed_as_bounded_failure() -> None:
                 action="TRANSFER_HUMAN",
             ),
             decision("TRANSFER_HUMAN", goal="转人工处理格式错误"),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["查询结果格式无效，需要转人工继续处理。"],
+        responses=[],
     )
 
     result = run_async(
@@ -316,8 +345,9 @@ def test_unknown_or_wrong_argument_selection_is_blocked_before_adapter_execution
             understanding(),
             decision(),
             selection(selected_tool, arguments),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["工具选择未通过安全校验，需要转人工继续处理。"],
+        responses=[],
     )
 
     result = run_async(
@@ -368,8 +398,9 @@ def test_repeated_search_is_duplicate_blocked_and_never_calls_adapter_twice() ->
                 unresolved=["重复调用被阻止"],
                 action="TRANSFER_HUMAN",
             ),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["重复调用被阻止，需要转人工继续处理。"],
+        responses=[],
     )
 
     result, events = run_async(
@@ -401,8 +432,9 @@ def test_round_limit_stops_after_review_without_another_action_decision() -> Non
             decision(),
             selection("work_order_query", {"work_order_id": "WO20260001"}),
             review(sufficient=True, facts=["状态为 APPROVING"]),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["已达到本次运行安全上限，需要转人工。"],
+        responses=[],
     )
     result, events = run_async(
         run_ops_agent_with_trace(
@@ -455,8 +487,9 @@ def test_timeout_limit_is_reviewed_and_cannot_escape_as_unbounded_wait() -> None
                 unresolved=["查询超时"],
                 action="TRANSFER_HUMAN",
             ),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["查询超时，需要转人工继续处理。"],
+        responses=[],
     )
 
     result = run_async(
@@ -496,8 +529,12 @@ def test_unknown_incident_id_is_typed_not_found_without_fabricated_incident_fiel
                 action="ASK_USER",
             ),
             decision("ASK_USER", goal="补充可查询的事件范围"),
+            grounded_response_plan(
+                "ASK_USER",
+                clarification_target="SCOPE",
+            ),
         ],
-        responses=["请补充准确的系统或站点范围。"],
+        responses=[],
     )
     result = run_async(
         run_ops_agent(
@@ -556,8 +593,9 @@ def test_chinese_clarification_context_retains_reviewed_facts_and_policy() -> No
                 action="ASK_USER",
             ),
             decision("ASK_USER", goal="补充影响范围"),
+            grounded_response_plan("ASK_USER", clarification_target="SCOPE"),
         ],
-        responses=["已确认当前节点为设备主管审批、处理人为 U10108，仍需补充站点范围。"],
+        responses=[],
     )
     result = run_async(
         run_ops_agent(state("工单为什么一直没处理？"), gateway(provider))
@@ -567,8 +605,7 @@ def test_chinese_clarification_context_retains_reviewed_facts_and_policy() -> No
     assert result.task.status.value == "WAITING_USER"
     terminal = provider.history[-1]
     context = json.loads(terminal.messages[1].content)
-    assert context["latest_review"]["evidence_sufficient"] is False
-    assert context["latest_review"]["recommended_action"] == "ASK_USER"
+    assert "latest_review" not in context
     assert context["evidence"][0]["key_fields"]["current_handler"] == "U10108"
     assert context["evidence"][0]["key_fields"]["waiting_hours"] == 4.0
     assert "用户输入包含中文" in terminal.messages[0].content
@@ -659,8 +696,9 @@ def test_concurrent_custom_graph_runs_keep_registry_and_state_isolated() -> None
             selection("first_query", {"work_order_id": "FIRST"}),
             review(sufficient=True, facts=["处理人为 FIRST-HANDLER"]),
             decision("REPLY", goal="回复 first"),
+            grounded_response_plan(),
         ],
-        responses=["first response"],
+        responses=[],
     )
     second_provider = MockModelProvider(
         structured_responses=[
@@ -669,8 +707,9 @@ def test_concurrent_custom_graph_runs_keep_registry_and_state_isolated() -> None
             selection("second_query", {"work_order_id": "SECOND"}),
             review(sufficient=True, facts=["处理人为 SECOND-HANDLER"]),
             decision("REPLY", goal="回复 second"),
+            grounded_response_plan(),
         ],
-        responses=["second response"],
+        responses=[],
     )
 
     async def run_both() -> tuple[OpsAgentState, OpsAgentState]:
@@ -682,8 +721,12 @@ def test_concurrent_custom_graph_runs_keep_registry_and_state_isolated() -> None
     first, second = run_async(run_both())
 
     assert sorted(calls) == ["first:FIRST", "second:SECOND"]
-    assert first.response.message == "first response"
-    assert second.response.message == "second response"
+    assert first.response.message == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
+    assert second.response.message == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
     assert first.evidence.items[0].source == "first_query"
     assert second.evidence.items[0].source == "second_query"
     assert first.evidence.items[0].key_fields["current_handler"] == "FIRST-HANDLER"
@@ -729,8 +772,9 @@ def test_privileged_write_with_injected_extra_argument_never_reaches_handler() -
                     "__proto__": {"authorized": True},
                 },
             ),
+            grounded_response_plan("TRANSFER_HUMAN"),
         ],
-        responses=["该请求超出当前只读能力范围，需要转人工处理。"],
+        responses=[],
     )
     result = run_async(
         run_ops_agent(
@@ -780,8 +824,9 @@ def test_privileged_risk_signal_is_advisory_and_does_not_route_away_from_read_on
             selection("safe_read_query", {"work_order_id": "WO-ADVISORY"}),
             review(sufficient=True, facts=["状态为 QUEUED"]),
             decision("REPLY", goal="回复已核验事实"),
+            grounded_response_plan(),
         ],
-        responses=["只读查询已完成。"],
+        responses=[],
     )
 
     result = run_async(
@@ -794,7 +839,9 @@ def test_privileged_risk_signal_is_advisory_and_does_not_route_away_from_read_on
 
     assert calls == ["WO-ADVISORY"]
     assert result.safety.blocked_reason is None
-    assert result.response.message == "只读查询已完成。"
+    assert result.response.message == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
 
 
 def test_model_goal_is_bounded_in_safe_trace() -> None:
@@ -807,17 +854,19 @@ def test_model_goal_is_bounded_in_safe_trace() -> None:
                 goal=long_goal,
                 rationale="正常的摘要",
             ),
+            grounded_response_plan(),
         ],
-        responses=["已完成有限回复。"],
+        responses=[],
     )
     result, events = run_async(
         run_ops_agent_with_trace(state("请简要回复"), gateway(provider))
     )
 
-    assert result.response.message == "已完成有限回复。"
+    assert result.response.message == (
+        "当前没有可引用的来源字段，无法基于只读证据给出事实回复。"
+    )
     decision_event = next(event for event in events if event.node == "decide_action")
-    assert len(decision_event.summary) <= 500
-    assert decision_event.summary.endswith("…")
+    assert decision_event.summary == "REPLY"
 
 
 def test_model_provider_payload_and_user_injection_do_not_enter_trace_or_state(
@@ -944,8 +993,9 @@ def test_non_finite_tool_result_becomes_bounded_failure_in_graph() -> None:
                 action="TRANSFER_HUMAN",
             ),
             decision("TRANSFER_HUMAN", goal="转人工处理无效结果"),
-            ],
-        responses=["查询结果无效，需要转人工继续处理。"],
+            grounded_response_plan("TRANSFER_HUMAN"),
+        ],
+        responses=[],
     )
 
     result = run_async(
