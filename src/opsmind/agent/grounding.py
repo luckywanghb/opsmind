@@ -58,7 +58,7 @@ class ResolvedEvidenceReference:
 
 
 _EVIDENCE_ID = re.compile(r"^E[1-9][0-9]{0,5}$")
-_PATH_TOKEN = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+_PATH_TOKEN = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_-]*|[0-9]+)$")
 _ROOT_FIELDS = frozenset({"key_fields", "metadata"})
 _LIMITED_PRESENTATIONS = frozenset(
     {
@@ -144,9 +144,17 @@ def _canonical_path(reference: EvidenceReference) -> tuple[str, list[str]]:
 def _nested_value(value: object, path: list[str]) -> JsonValue:
     current = value
     for part in path:
-        if not isinstance(current, dict) or part not in current:
+        if isinstance(current, dict):
+            if part not in current:
+                raise GroundingValidationError("EVIDENCE_FIELD_MISSING")
+            current = current[part]
+        elif isinstance(current, list) and part.isdigit():
+            index = int(part)
+            if index >= len(current):
+                raise GroundingValidationError("EVIDENCE_FIELD_MISSING")
+            current = current[index]
+        else:
             raise GroundingValidationError("EVIDENCE_FIELD_MISSING")
-        current = current[part]
     if isinstance(current, datetime):
         current = current.isoformat()
     if current is None:
@@ -158,19 +166,28 @@ def _nested_value(value: object, path: list[str]) -> JsonValue:
     return cast(JsonValue, current)
 
 
-def _schema_field_exists(
-    registry: ToolRegistry,
-    source: str,
-    field_name: str,
-) -> None:
-    """Ensure the selected field is declared by its registered response."""
+def _evidence_payload(item: EvidenceItem) -> dict[str, JsonValue]:
+    """Build the detached typed response payload used for validation.
 
-    # ``field_presentation`` resolves only properties in the typed response
-    # schema and rejects the adapter-only ``message`` field.
-    try:
-        registry.field_presentation(source, field_name)
-    except (UnknownToolError, UnknownToolFieldError) as exc:
-        raise GroundingValidationError("EVIDENCE_FIELD_UNDECLARED") from exc
+    ``result_status`` is retained in ``metadata`` for review bookkeeping by
+    older evidence projections.  The typed response payload is therefore
+    reconstructed from ``key_fields`` with that status only as a fallback;
+    review-only metadata such as ``reviewed`` never enters the response
+    contract.
+    """
+
+    payload = dict(item.key_fields)
+    if "result_status" not in payload:
+        status = item.metadata.get("result_status")
+        if status is not None:
+            payload["result_status"] = status
+    elif "result_status" in item.metadata:
+        # A duplicated status is only trustworthy when both projections agree.
+        # Do this check here, before a selected metadata status can influence
+        # NOT_FOUND rendering.
+        if item.key_fields["result_status"] != item.metadata["result_status"]:
+            raise GroundingValidationError("EVIDENCE_FIELD_INVALID")
+    return payload
 
 
 def validate_evidence_references(
@@ -202,6 +219,7 @@ def validate_evidence_references(
     stable = stable_evidence_items(evidence)
     by_id = {item.evidence_id: item for item in stable}
     resolved: list[ResolvedEvidenceReference] = []
+    validated_payloads: dict[str, dict[str, object]] = {}
     seen: set[tuple[str, str]] = set()
     for reference in parsed_plan.evidence_references:
         if reference.evidence_id not in by_id:
@@ -213,22 +231,48 @@ def validate_evidence_references(
         seen.add(key)
         item = by_id[reference.evidence_id]
         top_field = path[0]
-        if root == "key_fields":
-            _schema_field_exists(tool_registry, item.source, top_field)
-            value = _nested_value(item.key_fields, path)
-        else:
+        # Resolve the top-level declaration before touching the generic
+        # evidence object so an unknown field is never confused with an absent
+        # declared field. Nested declaration is enforced by the typed payload
+        # and the bounded path grammar below.
+        try:
+            presentation = tool_registry.field_presentation(item.source, top_field)
+        except (UnknownToolError, UnknownToolFieldError) as exc:
+            raise GroundingValidationError("EVIDENCE_FIELD_UNDECLARED") from exc
+
+        if root == "metadata":
             # ``result_status`` is duplicated in compact metadata for safe
             # review bookkeeping, but it remains declared by the typed tool
             # response and can therefore be referenced explicitly.  Other
             # harness metadata (such as ``reviewed``) is not source evidence.
             if top_field != "result_status" or len(path) != 1:
                 raise GroundingValidationError("EVIDENCE_FIELD_UNDECLARED")
-            _schema_field_exists(tool_registry, item.source, top_field)
-            value = _nested_value(item.metadata, path)
+        if reference.evidence_id not in validated_payloads:
+            try:
+                validated_payloads[reference.evidence_id] = (
+                    tool_registry.validate_response_payload(
+                        item.source,
+                        _evidence_payload(item),
+                    )
+                )
+            except (UnknownToolError, UnknownToolFieldError) as exc:
+                raise GroundingValidationError("EVIDENCE_FIELD_UNDECLARED") from exc
+            except Exception as exc:
+                # This intentionally includes Pydantic's ValidationError and
+                # JSON encoding failures. The source payload is untrusted
+                # state and must never be coerced into a factual value.
+                raise GroundingValidationError("EVIDENCE_FIELD_INVALID") from exc
+
+        # Resolve presence from the original root so a metadata fallback does
+        # not make an absent ``key_fields.result_status`` appear referenceable.
+        raw_root = item.key_fields if root == "key_fields" else item.metadata
+        _nested_value(raw_root, path)
         try:
-            presentation = tool_registry.field_presentation(item.source, top_field)
-        except Exception as exc:
-            raise GroundingValidationError("EVIDENCE_FIELD_UNDECLARED") from exc
+            value = _nested_value(validated_payloads[reference.evidence_id], path)
+        except GroundingValidationError:
+            # A declared nullable field is represented as null by Pydantic and
+            # is intentionally reported as missing at the grounding boundary.
+            raise
         resolved.append(
             ResolvedEvidenceReference(
                 reference=reference,
@@ -267,17 +311,36 @@ def _format_json_value(value: JsonValue, presentation: ToolFieldPresentation) ->
     else:
         rendered = str(value)
     unit = presentation.unit_zh or ""
-    return f"{rendered}{unit}"
+    return f"{_escape_untrusted_text(rendered)}{_escape_untrusted_text(unit)}"
 
 
-def _result_status(item: EvidenceItem) -> str | None:
-    """Read the typed result status used for the safe not-found branch."""
+def _escape_untrusted_text(value: str) -> str:
+    """Keep source-controlled strings inert in plain-text/Markdown clients."""
 
-    for payload in (item.metadata, item.key_fields):
-        value = payload.get("result_status")
-        if isinstance(value, str):
-            return value
-    return None
+    escaped: list[str] = []
+    underscore_count = value.count("_")
+    for character in value:
+        codepoint = ord(character)
+        if character == "\n":
+            escaped.append(r"\n")
+        elif character == "\r":
+            escaped.append(r"\r")
+        elif (
+            codepoint < 0x20
+            or 0x7F <= codepoint <= 0x9F
+            or codepoint in {0x2028, 0x2029}
+        ):
+            escaped.append(f"\\u{codepoint:04x}")
+        # Keep ordinary identifiers such as ``EQUIPMENT_VIEW`` unchanged;
+        # paired underscores are escaped because they can form Markdown
+        # emphasis even when supplied entirely by a source value.
+        elif character == "_" and underscore_count >= 2:
+            escaped.append(r"\_")
+        elif character in r"\`*~#[]()<>!|;:=；：":
+            escaped.append(f"\\{character}")
+        else:
+            escaped.append(character)
+    return "".join(escaped)
 
 
 def _limitation_text(
@@ -353,8 +416,10 @@ def render_grounded_response(
 
     parts: list[str] = []
     for reference in resolved:
-        label = reference.presentation.label_zh
+        label = _escape_untrusted_text(reference.presentation.label_zh)
         value = _format_json_value(reference.value, reference.presentation)
+        # The source name comes from the registered tool key (not provider
+        # data); preserve its contract spelling for audit/UI consumers.
         parts.append(f"来源 {reference.item.source}：{label}={value}")
 
     if parsed_plan.presentation_intent is ResponsePresentationIntent.NOT_FOUND:
@@ -363,11 +428,9 @@ def render_grounded_response(
         # fabricated absence; with no typed not-found status, use the generic
         # limitation below instead.
         not_found = any(
-            _result_status(reference.item) == "not_found"
+            reference.field_name == "result_status"
+            and reference.value == "not_found"
             for reference in resolved
-        ) or any(
-            _result_status(item) == "not_found"
-            for item in stable_evidence_items(evidence_items)
         )
         if not_found:
             parts.append("该来源没有匹配记录，无法提供未返回的业务事实。")

@@ -28,57 +28,157 @@ const traceStatuses = new Set(["completed", "failed", "blocked"]);
 const isNullableString = (value: unknown): value is string | null => value === null || typeof value === "string";
 const isOptionalNullableString = (value: unknown): boolean => value === undefined || isNullableString(value);
 
+const MAX_EVIDENCE_ITEMS = 50;
+const MAX_EVIDENCE_COLLECTION_ITEMS = 50;
+const MAX_EVIDENCE_NESTING_DEPTH = 4;
+const MAX_EVIDENCE_STRING_LENGTH = 2_000;
+const MAX_EVIDENCE_SERIALIZED_BYTES = 16 * 1_024;
+const MAX_TRACE_SUMMARY_LENGTH = 500;
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isFiniteJson(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isFiniteJson);
+  if (!isObject(value)) return false;
+  return Object.values(value).every(isFiniteJson);
+}
+
+function isCompactJson(value: unknown, parentDepth = 0): boolean {
+  if (typeof value === "string") return value.length <= MAX_EVIDENCE_STRING_LENGTH;
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) {
+    if (parentDepth + 1 > MAX_EVIDENCE_NESTING_DEPTH || value.length > MAX_EVIDENCE_COLLECTION_ITEMS) return false;
+    return value.every((item) => isCompactJson(item, parentDepth + 1));
+  }
+  if (!isObject(value)) return false;
+  if (parentDepth + 1 > MAX_EVIDENCE_NESTING_DEPTH || Object.keys(value).length > MAX_EVIDENCE_COLLECTION_ITEMS) return false;
+  return Object.entries(value).every(([key, item]) => key.length <= MAX_EVIDENCE_STRING_LENGTH && isCompactJson(item, parentDepth + 1));
+}
+
+function utf8Length(value: unknown): number {
+  try {
+    const encoded = JSON.stringify(value);
+    return encoded === undefined ? Number.POSITIVE_INFINITY : new TextEncoder().encode(encoded).length;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function isValidTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:?\d{2})?)?$/.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, , zone] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (year < 1 || year > 9_999 || month < 1 || month > 12) return false;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) return false;
+  if (hourText === undefined) return true;
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  if (zone && zone !== "Z") {
+    const offset = zone.slice(1).replace(":", "");
+    if (Number(offset.slice(0, 2)) > 23 || Number(offset.slice(2)) > 59) return false;
+  }
+  return Number.isFinite(Date.parse(value));
+}
+
+const responseKeys = new Set(["request_id", "thread_id", "status", "final_status", "understanding", "decision", "trace", "final_reply", "evidence", "handoff"]);
+const understandingKeys = new Set(["primary_intent", "request_type", "symptom", "entities", "risk_signal", "uncertainty"]);
+const decisionKeys = new Set(["action", "goal", "rationale"]);
+const traceKeys = new Set(["node", "task", "profile", "status", "summary"]);
+const evidenceKeys = new Set(["evidence_id", "source", "summary", "key_fields", "metadata", "artifact_ref", "timestamp"]);
+const handoffKeys = new Set(["required", "summary"]);
+
 function isEvidence(value: unknown): boolean {
-  return (
-    isObject(value) &&
-    (value.evidence_id === undefined || (typeof value.evidence_id === "string" && /^E[1-9][0-9]{0,5}$/.test(value.evidence_id))) &&
-    typeof value.source === "string" &&
-    typeof value.summary === "string" &&
-    isObject(value.key_fields) &&
-    isObject(value.metadata) &&
-    isNullableString(value.artifact_ref) &&
-    typeof value.timestamp === "string"
-  );
+  if (!isObject(value) || !hasOnlyKeys(value, evidenceKeys)) return false;
+  const evidenceId = value.evidence_id;
+  if (!(evidenceId === undefined || evidenceId === null || (typeof evidenceId === "string" && /^E[1-9][0-9]{0,5}$/.test(evidenceId)))) return false;
+  if (typeof value.source !== "string" || value.source.length > MAX_EVIDENCE_STRING_LENGTH) return false;
+  if (typeof value.summary !== "string" || value.summary.length > MAX_EVIDENCE_STRING_LENGTH) return false;
+  if (!isObject(value.key_fields) || !isObject(value.metadata)) return false;
+  if (!isCompactJson(value.key_fields) || !isCompactJson(value.metadata)) return false;
+  if (!isNullableString(value.artifact_ref) || (typeof value.artifact_ref === "string" && value.artifact_ref.length > MAX_EVIDENCE_STRING_LENGTH)) return false;
+  if (!isValidTimestamp(value.timestamp)) return false;
+  return utf8Length(value) <= MAX_EVIDENCE_SERIALIZED_BYTES;
+}
+
+function hasFinalReply(value: Record<string, unknown>): boolean {
+  const finalReply = value.final_reply;
+  return typeof finalReply === "string" && finalReply.trim().length > 0;
+}
+
+function hasRequiredHandoff(value: Record<string, unknown>): boolean {
+  const handoff = value.handoff;
+  return isObject(handoff) && handoff.required === true;
 }
 
 function hasResponseOutcome(value: Record<string, unknown>): boolean {
-  const finalReply = value.final_reply;
-  const hasFinalReply = typeof finalReply === "string" && finalReply.trim().length > 0;
   const hasEvidence = Array.isArray(value.evidence) && value.evidence.length > 0;
-  const handoff = value.handoff;
-  const hasHandoff = isObject(handoff) && handoff.required === true;
-  return hasFinalReply || hasEvidence || hasHandoff;
+  return hasFinalReply(value) || hasEvidence || hasRequiredHandoff(value);
+}
+
+function hasStatusOutcome(value: Record<string, unknown>): boolean {
+  switch (value.status) {
+    case "completed":
+      return hasResponseOutcome(value);
+    case "waiting_user":
+      return hasFinalReply(value);
+    case "transferred":
+      return hasFinalReply(value) || hasRequiredHandoff(value);
+    default:
+      return true;
+  }
 }
 
 function isChatResponse(value: unknown): value is ChatResponse {
   if (!isObject(value) || !isObject(value.understanding) || !isObject(value.decision)) return false;
+  if (!hasOnlyKeys(value, responseKeys) || !hasOnlyKeys(value.understanding, understandingKeys) || !hasOnlyKeys(value.decision, decisionKeys)) return false;
   const trace = value.trace;
+  const understanding = value.understanding;
+  const decision = value.decision;
+  const handoff = value.handoff;
+  const evidence = value.evidence;
+  if (isObject(handoff) && !hasOnlyKeys(handoff, handoffKeys)) return false;
+  if (Array.isArray(trace) && !trace.every((entry) => isObject(entry) && hasOnlyKeys(entry, traceKeys))) return false;
   return (
     typeof value.request_id === "string" &&
     typeof value.thread_id === "string" &&
     responseStatuses.has(String(value.status)) &&
-    primaryIntents.has(String(value.understanding.primary_intent)) &&
-    requestTypes.has(String(value.understanding.request_type)) &&
-    isNullableString(value.understanding.symptom) &&
-    isObject(value.understanding.entities) &&
-    riskSignals.has(String(value.understanding.risk_signal)) &&
-    isNullableString(value.understanding.uncertainty) &&
-    agentActions.has(String(value.decision.action)) &&
-    typeof value.decision.goal === "string" &&
-    typeof value.decision.rationale === "string" &&
+    primaryIntents.has(String(understanding.primary_intent)) &&
+    requestTypes.has(String(understanding.request_type)) &&
+    isNullableString(understanding.symptom) &&
+    isObject(understanding.entities) &&
+    isFiniteJson(understanding.entities) &&
+    riskSignals.has(String(understanding.risk_signal)) &&
+    isNullableString(understanding.uncertainty) &&
+    agentActions.has(String(decision.action)) &&
+    typeof decision.goal === "string" &&
+    typeof decision.rationale === "string" &&
     isOptionalNullableString(value.final_status) &&
     isOptionalNullableString(value.final_reply) &&
-    (value.evidence === undefined || (Array.isArray(value.evidence) && value.evidence.every(isEvidence))) &&
-    (value.handoff === undefined || value.handoff === null || (isObject(value.handoff) && typeof value.handoff.required === "boolean" && isNullableString(value.handoff.summary))) &&
-    (value.status !== "completed" || hasResponseOutcome(value)) &&
+    (evidence === undefined || (Array.isArray(evidence) && evidence.length <= MAX_EVIDENCE_ITEMS && evidence.every(isEvidence))) &&
+    (handoff === undefined || handoff === null || (isObject(handoff) && typeof handoff.required === "boolean" && isNullableString(handoff.summary))) &&
+    hasStatusOutcome(value) &&
     Array.isArray(trace) &&
     trace.every((entry) =>
       isObject(entry) &&
       typeof entry.node === "string" &&
+      entry.node.length <= MAX_TRACE_SUMMARY_LENGTH &&
       modelTasks.has(String(entry.task)) &&
       modelProfiles.has(String(entry.profile)) &&
       traceStatuses.has(String(entry.status)) &&
-      typeof entry.summary === "string"
+      typeof entry.summary === "string" &&
+      entry.summary.length <= MAX_TRACE_SUMMARY_LENGTH
     )
   );
 }

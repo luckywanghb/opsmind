@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TypeVar
 
 from pydantic import AliasChoices, Field
 
-from opsmind.state import StateModel
+from opsmind.state import EvidenceItem, StateModel
 from opsmind.tools.contracts import (
     ToolFieldPresentation,
     ToolMode,
@@ -296,6 +298,32 @@ class ToolRegistry:
             field_schema if isinstance(field_schema, dict) else None,
         )
 
+    def validate_response_payload(
+        self,
+        tool_name: str,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Strictly validate a detached evidence payload against its schema.
+
+        Evidence is a JSON projection rather than the adapter's Pydantic
+        object. JSON-mode validation preserves enum values serialized as
+        strings while ``strict=True`` prevents coercion of JSON strings,
+        booleans, and numbers. The adapter-only optional ``message`` field is
+        excluded because it is deliberately never retained as evidence.
+        """
+
+        registration = self.get(tool_name)
+        candidate = dict(payload)
+        candidate.pop("message", None)
+        encoded = json.dumps(candidate, ensure_ascii=False, allow_nan=False)
+        validated = registration.response_model.model_validate_json(
+            encoded,
+            strict=True,
+        )
+        normalized = validated.model_dump(mode="json")
+        normalized.pop("message", None)
+        return normalized
+
     def validate_call(self, tool_name: str, arguments: object) -> ToolCall:
         """Validate a model selection without executing an adapter."""
 
@@ -349,7 +377,9 @@ class ToolRegistry:
             # field opts out explicitly.  The state and model boundaries are
             # standard JSON contracts, so enforce finiteness here at the
             # adapter ownership boundary before review/context projection.
-            _reject_non_finite_json(typed_result.model_dump(mode="json"))
+            payload = typed_result.model_dump(mode="json")
+            _reject_non_finite_json(payload)
+            _validate_compact_adapter_payload(tool_name, payload)
         except Exception as exc:
             raise ToolExecutionError(tool_name, "MALFORMED_TOOL_RESULT") from exc
         return ToolInvocationResult(tool_name=tool_name, output=typed_result)
@@ -381,6 +411,35 @@ def _reject_non_finite_json(value: object) -> None:
     elif isinstance(value, dict):
         for item in value.values():
             _reject_non_finite_json(item)
+
+
+def _validate_compact_adapter_payload(
+    tool_name: str,
+    payload: Mapping[str, object],
+) -> None:
+    """Apply the same compact evidence budget at the adapter boundary.
+
+    ``EvidenceItem`` is the canonical compact projection contract.  Construct
+    a detached probe here so an oversized typed response becomes the existing
+    ``MALFORMED_TOOL_RESULT`` error before review can expose an uncaught state
+    validation exception.  The adapter's optional ``message`` is intentionally
+    not evidence and is excluded exactly as it is in review projection.
+    """
+
+    compact_payload = dict(payload)
+    compact_payload.pop("message", None)
+    EvidenceItem(
+        source=tool_name,
+        summary=f"{tool_name}: typed result",
+        key_fields=compact_payload,
+        metadata={
+            "result_status": compact_payload.get(
+                "result_status", "insufficient_evidence"
+            ),
+            "reviewed": True,
+        },
+        timestamp=datetime.now(UTC),
+    )
 
 
 _SCHEMA_ANNOTATION_KEYS = frozenset({"description", "title", "$comment"})

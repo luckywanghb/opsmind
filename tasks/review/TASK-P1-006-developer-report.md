@@ -73,6 +73,67 @@ cd web && npm run build
 → PASS
 ```
 
+## Independent Tester remediation pass — 2026-09-05
+
+The independent Tester ran product commit `afa2df9f7cccd9ef4ad646f8c8bbc75f4425fb33`
+from `task/TASK-P1-006-evidence-test` (tester commit `2642891`) and reported
+**FAIL — 0 BLOCKER, 6 MAJOR**. The immutable browser/live-provider checks were
+not run by Tester instruction. All seven backend and four frontend expected
+failures were migrated into strict product tests; no `xfail`/`it.fails`
+markers remain in the product test suite.
+
+Remediation applied on top of `afa2df9`:
+
+- MAJOR-1: grounded references now validate the complete detached evidence
+  payload through the registered Pydantic response model with strict JSON
+  semantics, including nested models/arrays, enums, nullability, and extra
+  fields. The review-only `message` field is intentionally excluded.
+- MAJOR-2: `NOT_FOUND` is emitted only when a resolved reference explicitly
+  selects a validated `result_status=not_found`; unrelated evidence cannot
+  add an absence claim, and duplicated metadata status must agree.
+- MAJOR-3: source values are rendered as inert data by encoding control,
+  delimiter, and Markdown-significant characters while preserving the
+  deterministic source-qualified format.
+- MAJOR-4: the registry applies the canonical compact evidence budgets before
+  returning an adapter result, converting oversized typed output to the
+  existing `MALFORMED_TOOL_RESULT` boundary error.
+- MAJOR-5: the frontend requires a non-empty final reply for `waiting_user`
+  and either a required handoff or non-empty reply for `transferred`.
+- MAJOR-6: the frontend now rejects malformed timestamps, undeclared fields,
+  non-finite values, and evidence payloads exceeding collection, nesting,
+  string, or serialized-byte limits.
+
+Final deterministic validation for this remediation:
+
+```text
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q -rxX
+→ 452 passed, 1 deselected, 1 warning
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen ruff check src tests
+→ PASS
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen mypy src
+→ Success: no issues found in 36 source files
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv lock --check
+→ Resolved 55 packages in 1ms; PASS
+
+git diff --check
+→ PASS
+
+cd web && npm run lint
+→ PASS
+
+cd web && npm test -- --run
+→ 4 files passed; 21 passed
+
+cd web && npm run build
+→ PASS
+```
+
+No blocker or major findings remain from the independent Tester report.
+Browser and live-provider validation remain intentionally not run.
+
 Run from the task worktree with the locked dependency environment:
 
 ```text
