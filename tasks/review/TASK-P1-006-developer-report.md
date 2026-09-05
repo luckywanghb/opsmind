@@ -138,3 +138,76 @@ cd web && npm run build
 - Kept `evidence_sufficient` and `recommended_action` advisory: a fresh model
   action decision still owns control flow, including when its decision differs
   from the review recommendation.
+
+## PM Architecture Amendment — Evidence-Bound User-Facing Output
+
+The PM-authorized reliability amendment is implemented in new commits on this
+branch. Terminal model calls now return only a typed
+`GroundedResponsePlanOutput`: terminal/presentation intent, a bounded
+limitation/clarification enum, and relevant `EvidenceReference` ID/path
+pairs. The plan has no answer, claim, or factual prose field. Review projects
+assign stable per-run `E1`, `E2`, ... IDs without mutating caller-owned
+evidence.
+
+Registered tools now expose typed `ToolFieldPresentation` metadata (localized
+labels, units, value kind, and conservative semantic marker). The renderer
+resolves every reference against the registered response schema and source
+value, then emits deterministic source-qualified Simplified-Chinese text.
+Fixed limitation templates cover absent cause, SLA/threshold, entitlement,
+remediation, scope, and match evidence. Duration, status, and false source
+flags remain literal source fields.
+
+Unknown/duplicate IDs, undeclared or missing/null paths, extra plan fields,
+and terminal-mode mismatches fail closed before any output is rendered. The
+renderer never reads decision goal/rationale or review prose. Public trace and
+the UI action section use deterministic action/status summaries; typed
+decision goal/rationale remain control-plane response diagnostics only.
+
+Implementation commit: `416225d` (`feat: add evidence-bound response
+planning`). Test and fixture migration commit: `3c3a42f` (`test: migrate
+terminal fixtures to grounded plans`). Both are descendants of the immutable
+historical baseline `d9821a1`.
+
+### Amendment validation
+
+```text
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q tests/test_grounded_response_contract.py tests/test_grounded_api_boundary.py
+→ 17 passed, 1 warning
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen ruff check src tests
+→ PASS
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen mypy src
+→ Success: no issues found in 36 source files
+```
+
+### Final Developer validation
+
+The complete frozen validation was run from this task worktree before
+handoff; no real DeepSeek or browser call was made:
+
+```text
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q
+→ 443 passed, 1 deselected, 1 warning
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen ruff check src tests
+→ PASS
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen mypy src
+→ Success: no issues found in 36 source files
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv lock --check
+→ Resolved 55 packages in 1ms; PASS
+
+git diff --check
+→ PASS
+
+cd web && npm run lint
+→ PASS
+
+cd web && npm test -- --run
+→ 3 files / 16 tests passed
+
+cd web && npm run build
+→ PASS
+```
