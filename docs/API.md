@@ -142,6 +142,10 @@ raw tool-result blobs, source context, credentials, authorization headers, or
 tracebacks.  A planned UI placeholder is never used for a completed step: the
 UI renders the actual trace returned by this endpoint.
 
+When a structured model node fails, internal logs may correlate the request ID
+with an allowlisted node, expected schema name, logical profile, and sanitized
+category.  These diagnostics are not included in the public error envelope.
+
 ## Errors
 
 Errors use one envelope:

@@ -74,7 +74,9 @@ from opsmind.models import (
     ModelStructuredOutputError,
     ModelTask,
     ModelUsage,
+    StructuredFailureCategory,
     StructuredModelResponse,
+    StructuredNodeFailureDiagnostic,
 )
 from opsmind.state import (
     AgentAction,
@@ -245,5 +247,7 @@ __all__ = [
     "ModelStructuredOutputError",
     "ModelTask",
     "ModelUsage",
+    "StructuredFailureCategory",
     "StructuredModelResponse",
+    "StructuredNodeFailureDiagnostic",
 ]

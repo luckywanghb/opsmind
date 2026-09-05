@@ -26,10 +26,51 @@
   run-local capability metadata now reach re-decision, review, and every
   terminal context; shared bounded-answer policy governs reply, clarification,
   and handoff without Python answer routing.
+- Applied the escalation remediation without changing graph topology or
+  business routing: model-facing review schemas retain nested JSON Schema
+  structure, enums, references, `anyOf` branches and nullability; adapter
+  outputs are checked for finite JSON inside tool execution and normalize to
+  `MALFORMED_TOOL_RESULT`; structured model-node failures carry only an
+  allowlisted node/schema/profile/category diagnostic for request-correlated
+  internal logging while the public error envelope remains generic.
+- Added detached registry metadata snapshots, a fixed bound for trace
+  summaries, frontend evidence-metadata validation, and completed-response
+  outcome consistency while preserving legitimate closed/no-reply responses.
 - Added regression coverage for D01–D03 plus unseen IDs, invalid/unknown
   tools, read-only policy, adapter failure, limits, concurrency, and leakage.
 
 ## Validation evidence
+
+Escalation remediation validation (from the task worktree):
+
+```text
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q
+→ 426 passed, 1 deselected, 1 warning
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen pytest -q tests/test_p1_006_independent_adversarial.py tests/test_structured_node_diagnostics.py
+→ 27 passed
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen ruff check src tests
+→ PASS
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv run --frozen mypy src
+→ Success: no issues found in 35 source files
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-006-uv-cache uv lock --check
+→ PASS
+
+git diff --check
+→ PASS
+
+cd web && npm run lint
+→ PASS
+
+cd web && npm run test -- --run
+→ 3 files / 16 tests passed
+
+cd web && npm run build
+→ PASS
+```
 
 Run from the task worktree with the locked dependency environment:
 

@@ -91,6 +91,18 @@ credentials, and raw tool results are excluded.  The Chat response now exposes
 terminal status, optional final reply, compact evidence, handoff data, and the
 actual trace while retaining understanding and decision fields.
 
+The remediation keeps this boundary explicit: model-facing review schemas
+preserve their JSON Schema structure (including nested types, enums, refs,
+`anyOf` branches and nullability) while only human-readable annotations are
+bounded.  Adapter responses are revalidated and recursively checked for
+finite JSON before they can reach review or evidence projection; malformed
+results become the existing bounded `MALFORMED_TOOL_RESULT` failure path.
+Structured model-node failures attach an internal, request-correlated
+allowlist containing only node, expected schema name, logical profile and a
+sanitized category.  API responses remain the generic error envelope and do
+not expose prompts, model text, payloads, validation input or exception
+chains.  Trace summaries are capped at a fixed length at the event boundary.
+
 For Chinese input, prompts require Simplified Chinese for user-facing natural
 language fields.  Enum values, schema keys, and tool names remain English.
 The UI localizes presentation labels and renders actual tool/review/final nodes;

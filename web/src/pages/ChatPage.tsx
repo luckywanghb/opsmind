@@ -120,7 +120,7 @@ export function ChatPage() {
           ) : exchanges.map((exchange, index) => (
             <div className="exchange" key={`${exchange.message}-${index}`}>
               <div className="user-message"><span>你</span><p>{exchange.message}</p></div>
-              {exchange.response && <div className="agent-response"><div className="agent-response__intro"><span className="mini-mark"><Icon name="bot" /></span><div><strong>{exchange.response.status === "completed" ? "已完成请求" : "已完成请求分析"}</strong><p>以下内容来自本次真实 Agent 运行。</p></div></div><Understanding response={exchange.response} /><Decision response={exchange.response} /><FinalResult response={exchange.response} /><small className="request-id">Request ID · {exchange.response.request_id}</small></div>}
+              {exchange.response && <div className="agent-response"><div className="agent-response__intro"><span className="mini-mark"><Icon name="bot" /></span><div><strong>{exchange.response.status === "completed" && ((exchange.response.final_reply?.trim() ?? "") !== "" || (exchange.response.evidence?.length ?? 0) > 0 || exchange.response.handoff?.required === true) ? "已完成请求" : "已完成请求分析"}</strong><p>以下内容来自本次真实 Agent 运行。</p></div></div><Understanding response={exchange.response} /><Decision response={exchange.response} /><FinalResult response={exchange.response} /><small className="request-id">Request ID · {exchange.response.request_id}</small></div>}
               {exchange.error && <ChatErrorState {...exchange.error} onRetry={() => runSubmit(exchange.message)} />}
             </div>
           ))}

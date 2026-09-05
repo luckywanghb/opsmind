@@ -75,13 +75,21 @@ provider payloads, credentials, and raw tool results are not exposed.  The
 Chat API returns terminal status, optional final reply, compact evidence,
 handoff data, and this actual trace.
 
+Structured model-node failures additionally carry an internal,
+request-correlated diagnostic containing only the node, expected response
+schema name, logical profile, and a sanitized category.  The API logs those
+allowlisted fields without exception chains and retains the same generic
+public error envelope.
+
 ## Error behavior
 
 The current query is required and invalid structured output still fails at the
 typed gateway boundary.  Model/provider errors propagate to the API's
-sanitized error envelope.  Tool validation/policy failures are converted to a
-safe handoff path; adapter failures are reviewed and bounded by retry/loop
-limits.
+sanitized error envelope.  Structured adapter responses are checked for
+finite JSON before review; a malformed result becomes the bounded
+`MALFORMED_TOOL_RESULT` path.  Tool validation/policy failures are converted
+to a safe handoff path; adapter failures are reviewed and bounded by
+retry/loop limits.
 
 ## Current limitations
 

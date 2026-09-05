@@ -15,6 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from opsmind.agent.errors import AgentInputError
+from opsmind.agent.graph import bounded_trace_summary
 from opsmind.api.composition import build_runtime
 from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
 from opsmind.api.schemas import (
@@ -30,11 +31,38 @@ from opsmind.api.schemas import (
     HealthResponse,
 )
 from opsmind.api.settings import RuntimeSettings
-from opsmind.models import ModelInvocationError, ModelStructuredOutputError
+from opsmind.models import (
+    ModelInvocationError,
+    ModelStructuredOutputError,
+    StructuredNodeFailureDiagnostic,
+)
 from opsmind.state import IdentityState, OpsAgentState
 
 LOGGER = logging.getLogger("opsmind.api")
 RequestHandler = Callable[[Request], Awaitable[Response]]
+
+
+def _log_structured_node_failure(
+    request: Request,
+    error: ModelInvocationError | ModelStructuredOutputError,
+) -> None:
+    """Log an allowlisted, request-correlated structured-node diagnostic."""
+
+    diagnostic = getattr(error, "diagnostic", None)
+    if not isinstance(diagnostic, StructuredNodeFailureDiagnostic):
+        return
+    # Keep this record deliberately explicit.  In particular, do not pass
+    # ``error``/``exc_info``: provider messages and exception chains may carry
+    # prompts, payloads, credentials, or user input.
+    LOGGER.warning(
+        "structured_node_failure request_id=%s node=%s "
+        "expected_schema_name=%s logical_profile=%s category=%s",
+        _request_id(request),
+        diagnostic.node,
+        diagnostic.expected_schema_name,
+        diagnostic.logical_profile,
+        diagnostic.category,
+    )
 
 
 def _request_id(request: Request) -> str:
@@ -67,9 +95,11 @@ def _error_response(
 def _trace_summary(result: AgentRunResult, node: str) -> str:
     if node == "understand_request":
         understanding = result.state.understanding
-        return f"{understanding.primary_intent} / {understanding.request_type}"
+        return bounded_trace_summary(
+            f"{understanding.primary_intent} / {understanding.request_type}"
+        )
     decision = result.state.decision
-    return f"{decision.action}: {decision.goal}"
+    return bounded_trace_summary(f"{decision.action}: {decision.goal}")
 
 
 def _trace(result: AgentRunResult) -> list[AgentTraceStep]:
@@ -219,7 +249,7 @@ def create_app(
         request: Request,
         exc: ModelStructuredOutputError,
     ) -> JSONResponse:
-        del exc
+        _log_structured_node_failure(request, exc)
         return _error_response(
             request,
             status_code=502,
@@ -232,7 +262,7 @@ def create_app(
         request: Request,
         exc: ModelInvocationError,
     ) -> JSONResponse:
-        del exc
+        _log_structured_node_failure(request, exc)
         return _error_response(
             request,
             status_code=502,

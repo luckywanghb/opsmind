@@ -42,6 +42,16 @@ from opsmind.tools import (
 )
 
 TraceStatus = Literal["completed", "failed", "blocked"]
+TRACE_SUMMARY_MAX_LENGTH = 500
+
+
+def bounded_trace_summary(value: str) -> str:
+    """Keep public-safe execution summaries finite and readable."""
+
+    clean = value.strip()
+    if len(clean) <= TRACE_SUMMARY_MAX_LENGTH:
+        return clean
+    return f"{clean[: TRACE_SUMMARY_MAX_LENGTH - 1]}…"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +63,12 @@ class AgentTraceEvent:
     profile: str
     status: TraceStatus
     summary: str
+
+    def __post_init__(self) -> None:
+        # Dataclass freezing protects the event container, not the model text
+        # supplied as a summary.  Bound it at the event boundary so every
+        # caller (API or in-process) receives the same safe projection.
+        object.__setattr__(self, "summary", bounded_trace_summary(self.summary))
 
 
 OpsGraph = CompiledStateGraph[OpsAgentState, None, OpsAgentState, OpsAgentState]

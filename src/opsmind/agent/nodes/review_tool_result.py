@@ -6,9 +6,10 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from opsmind.agent.context import build_tool_review_context
+from opsmind.agent.diagnostics import attach_structured_node_diagnostic
 from opsmind.agent.prompts import (
     TOOL_RESULT_REVIEW_SYSTEM_PROMPT,
     language_instruction,
@@ -16,10 +17,12 @@ from opsmind.agent.prompts import (
 from opsmind.agent.schemas import ToolResultReviewOutput
 from opsmind.models import (
     ModelGateway,
+    ModelInvocationError,
     ModelMessage,
     ModelProfile,
     ModelRequest,
     ModelRole,
+    ModelStructuredOutputError,
     ModelTask,
 )
 from opsmind.state import EvidenceItem, FactsState, OpsAgentState, ToolState
@@ -102,8 +105,31 @@ async def review_tool_result(
         ],
         metadata={"node": "review_tool_result"},
     )
-    structured = await gateway.invoke_structured(request, ToolResultReviewOutput)
-    output = ToolResultReviewOutput.model_validate(structured.parsed)
+    try:
+        structured = await gateway.invoke_structured(
+            request,
+            ToolResultReviewOutput,
+        )
+        output = ToolResultReviewOutput.model_validate(structured.parsed)
+    except (ModelStructuredOutputError, ModelInvocationError) as exc:
+        attach_structured_node_diagnostic(
+            exc,
+            node="review_tool_result",
+            expected_schema_name=ToolResultReviewOutput.__name__,
+            logical_profile=ModelProfile.CHEAP.value,
+        )
+        raise
+    except ValidationError:
+        error = ModelStructuredOutputError(
+            "tool-result-review output failed state validation"
+        )
+        attach_structured_node_diagnostic(
+            error,
+            node="review_tool_result",
+            expected_schema_name=ToolResultReviewOutput.__name__,
+            logical_profile=ModelProfile.CHEAP.value,
+        )
+        raise error from None
 
     summary = _compact_text(output.summary)
     confirmed = _compact_facts(output.confirmed_facts)

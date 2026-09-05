@@ -2,9 +2,10 @@
 
 ## Status
 
-TEST — Architect remediation is implemented and validated on a new commit;
-independent Tester and Reviewer stages plus the PM architecture gate remain
-required.
+TEST — narrow escalation remediation is implemented on a new commit and
+deterministically validated; independent Tester/Reviewer evidence and the PM
+architecture gate remain required.  No live-provider/browser budget was used
+for this follow-up.
 
 ## Source
 
@@ -31,6 +32,8 @@ understand → decide → select typed read-only tool → execute → review evi
   review, and terminal generation;
 - bounded rounds/tool calls/retries/timeouts and deterministic READ_ONLY policy;
 - compact evidence and actual safe trace/API projection;
+- schema-preserving bounded review metadata, finite adapter-result rejection,
+  and allowlisted request-correlated structured-node diagnostics;
 - Simplified Chinese prompt contract and minimal UI localization/rendering;
 - deterministic D01–D03, unseen-ID, safety, failure, and convergence tests;
 - ADR-002 and Developer Report.

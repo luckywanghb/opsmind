@@ -71,3 +71,19 @@ it("renders a safe error state with its troubleshooting id", () => {
   fireEvent.click(screen.getByRole("button", { name: "重试本次请求" }));
   expect(onRetry).toHaveBeenCalledOnce();
 });
+
+it("does not label a completed response as done when no final response exists", async () => {
+  const falseCompleted = {
+    ...successfulResponse,
+    final_reply: null,
+    evidence: [],
+    handoff: null,
+  };
+  mockedSendChat.mockResolvedValue(falseCompleted);
+  render(<ChatPage />);
+  fireEvent.change(screen.getByLabelText("输入运维问题"), { target: { value: "incomplete" } });
+  fireEvent.click(screen.getByLabelText("发送消息"));
+
+  await screen.findByText("以下内容来自本次真实 Agent 运行。");
+  expect(screen.queryByText("已完成请求")).not.toBeInTheDocument();
+});

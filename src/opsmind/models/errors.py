@@ -2,14 +2,46 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from opsmind.models.contracts import ModelProfile
 
 
+StructuredFailureCategory = Literal[
+    "invocation_failed",
+    "empty_output",
+    "json_decode",
+    "schema_mismatch",
+    "response_metadata",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredNodeFailureDiagnostic:
+    """Allowlisted internal metadata for one failed structured node.
+
+    This object is intentionally limited to stable execution identity. It
+    carries no model text, prompts, payloads, validation values, credentials,
+    or exception objects. Request correlation is supplied by the API's
+    request ID when the diagnostic is emitted.
+    """
+
+    node: str
+    expected_schema_name: str
+    logical_profile: str
+    category: StructuredFailureCategory
+
+
 class ModelGatewayError(Exception):
     """Base exception for failures at the model gateway boundary."""
+
+    diagnostic: StructuredNodeFailureDiagnostic | None
+
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+        self.diagnostic = None
 
 
 class ModelRouteConfigurationError(ModelGatewayError):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TypeVar
@@ -149,7 +150,16 @@ class ToolRegistry:
             raise TypeError("request_model must extend ToolRequest")
         if not issubclass(registration.response_model, ToolResponse):
             raise TypeError("response_model must extend ToolResponse")
-        self._tools[name] = registration
+        # ``RegisteredTool`` is frozen, but ``ToolSpec`` is a validated,
+        # mutable Pydantic model.  Copy the metadata at the ownership
+        # boundary so a caller cannot mutate a live registry through the
+        # registration object it supplied.
+        self._tools[name] = RegisteredTool(
+            spec=registration.spec.model_copy(deep=True),
+            request_model=registration.request_model,
+            response_model=registration.response_model,
+            handler=registration.handler,
+        )
 
     def get(self, tool_name: str) -> RegisteredTool:
         registration = self._tools.get(tool_name)
@@ -252,6 +262,11 @@ class ToolRegistry:
             raise ToolExecutionError(tool_name) from exc
         try:
             typed_result = registration.response_model.model_validate(result)
+            # Pydantic permits non-finite floats unless every custom response
+            # field opts out explicitly.  The state and model boundaries are
+            # standard JSON contracts, so enforce finiteness here at the
+            # adapter ownership boundary before review/context projection.
+            _reject_non_finite_json(typed_result.model_dump(mode="json"))
         except Exception as exc:
             raise ToolExecutionError(tool_name, "MALFORMED_TOOL_RESULT") from exc
         return ToolInvocationResult(tool_name=tool_name, output=typed_result)
@@ -259,29 +274,63 @@ class ToolRegistry:
     def copy(self) -> ToolRegistry:
         """Create a run-local registry snapshot without mutable shared state."""
 
-        return ToolRegistry(list(self._tools.values()))
+        return ToolRegistry(
+            [
+                RegisteredTool(
+                    spec=registration.spec.model_copy(deep=True),
+                    request_model=registration.request_model,
+                    response_model=registration.response_model,
+                    handler=registration.handler,
+                )
+                for registration in self._tools.values()
+            ]
+        )
 
 
-def _bounded_schema(value: object, *, depth: int = 0) -> object:
-    """Keep model-visible review schema metadata finite and readable."""
+def _reject_non_finite_json(value: object) -> None:
+    """Reject adapter values that cannot be represented by standard JSON."""
 
-    if depth >= 4:
-        return "schema-depth-limit"
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("non-finite adapter result")
+    if isinstance(value, list):
+        for item in value:
+            _reject_non_finite_json(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            _reject_non_finite_json(item)
+
+
+_SCHEMA_ANNOTATION_KEYS = frozenset({"description", "title", "$comment"})
+_SCHEMA_ANNOTATION_LIMIT = 500
+
+
+def _bounded_schema(value: object, *, key: str | None = None) -> object:
+    """Bound prose annotations while preserving JSON Schema semantics.
+
+    Schema keywords such as ``enum``, ``anyOf``, ``items``, ``type``,
+    ``$ref`` and property names are semantic contract data.  They must never
+    be replaced with a depth sentinel or truncated list.  Pydantic's schema
+    output is JSON-compatible; only human-readable annotation strings are
+    bounded here, and all structural values are retained recursively.
+    """
+
     if isinstance(value, str):
-        return value[:500]
+        if key in _SCHEMA_ANNOTATION_KEYS:
+            return value[:_SCHEMA_ANNOTATION_LIMIT]
+        return value
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, list):
-        return [
-            _bounded_schema(item, depth=depth + 1)
-            for item in value[:50]
-        ]
+        return [_bounded_schema(item) for item in value]
     if isinstance(value, dict):
         return {
-            str(key)[:100]: _bounded_schema(item, depth=depth + 1)
-            for key, item in list(value.items())[:50]
+            str(item_key): _bounded_schema(item, key=str(item_key))
+            for item_key, item in value.items()
         }
-    return str(value)[:500]
+    # ``model_json_schema`` is required to return JSON-compatible data.  Do
+    # not stringify an unexpected value into a schema position: that would
+    # turn a typed contract into misleading model metadata.
+    raise TypeError("tool output schema must contain JSON-compatible values")
 
 
 __all__ = [

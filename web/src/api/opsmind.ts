@@ -34,9 +34,19 @@ function isEvidence(value: unknown): boolean {
     typeof value.source === "string" &&
     typeof value.summary === "string" &&
     isObject(value.key_fields) &&
+    isObject(value.metadata) &&
     isNullableString(value.artifact_ref) &&
     typeof value.timestamp === "string"
   );
+}
+
+function hasResponseOutcome(value: Record<string, unknown>): boolean {
+  const finalReply = value.final_reply;
+  const hasFinalReply = typeof finalReply === "string" && finalReply.trim().length > 0;
+  const hasEvidence = Array.isArray(value.evidence) && value.evidence.length > 0;
+  const handoff = value.handoff;
+  const hasHandoff = isObject(handoff) && handoff.required === true;
+  return hasFinalReply || hasEvidence || hasHandoff;
 }
 
 function isChatResponse(value: unknown): value is ChatResponse {
@@ -59,6 +69,7 @@ function isChatResponse(value: unknown): value is ChatResponse {
     isOptionalNullableString(value.final_reply) &&
     (value.evidence === undefined || (Array.isArray(value.evidence) && value.evidence.every(isEvidence))) &&
     (value.handoff === undefined || value.handoff === null || (isObject(value.handoff) && typeof value.handoff.required === "boolean" && isNullableString(value.handoff.summary))) &&
+    (value.status !== "completed" || hasResponseOutcome(value)) &&
     Array.isArray(trace) &&
     trace.every((entry) =>
       isObject(entry) &&
