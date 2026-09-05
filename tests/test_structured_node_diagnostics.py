@@ -184,7 +184,7 @@ def test_api_logs_request_correlated_safe_diagnostic_and_keeps_error_generic(
     assert response.status_code == 502
     body = response.json()
     assert set(body) == {"error"}
-    assert set(body["error"]) == {"code", "message", "request_id"}
+    assert set(body["error"]) == {"code", "message", "request_id", "run_id"}
     assert body["error"]["code"] == "MODEL_INVOCATION_FAILED"
     request_id = response.headers["X-Request-ID"]
     assert body["error"]["request_id"] == request_id

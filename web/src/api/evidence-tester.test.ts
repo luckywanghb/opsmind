@@ -3,6 +3,7 @@ import { OpsMindApiError, sendChat } from "./opsmind";
 
 const validResponse = {
   request_id: "req-evidence",
+  run_id: "run-evidence",
   thread_id: "thread-evidence",
   status: "decision_ready",
   understanding: {

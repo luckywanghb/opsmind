@@ -1,6 +1,6 @@
 # OpsMind Architecture — V0.1
 
-Status: TASK-P1-006 proposal — PM architecture gate required
+Status: TASK-P1-007 proposal — PM architecture gate required
 Architecture style: Model-first Agent + deterministic harness  
 Primary Agent runtime: LangGraph  
 Business environment: Fully synthetic manufacturing IT environment
@@ -456,7 +456,48 @@ The harness enforces limits; the model performs the business judgment.
 
 ---
 
-# 12. Safety V0.1
+# 12. Run persistence and observability
+
+TASK-P1-007 treats an Agent run as a first-class audit domain object. The IDs
+remain deliberately separate:
+
+```text
+request_id = HTTP correlation
+run_id     = one Agent execution record
+thread_id  = conversation correlation (not restoration)
+```
+
+The persistence boundary is outside the Agent graph:
+
+```text
+POST /api/v1/chat
+  → create STARTED run
+  → unchanged OpsAgentRuntime / LangGraph
+  → validate P1-006 safe projections
+  → atomically finalize SUCCEEDED or FAILED
+```
+
+`RunPersistenceService` owns lifecycle, monotonic timing, source-context
+allowlisting, stable evidence projection, and real runtime metadata.
+`RunRepository` is the backend-neutral contract. The default
+`SQLiteRunRepository` uses a versioned local schema containing `agent_runs`,
+`run_steps`, `evidence_records`, and `schema_metadata`.
+
+The successful transaction contains the terminal run, ordered safe trace, and
+ordered canonical compact evidence together. Only normalized error codes and
+available safe events are retained for failed runs. Prompts, hidden reasoning,
+raw provider/model/tool payloads, traceback or exception text, credentials,
+and arbitrary source context are outside the persistence boundary.
+
+Persistence fails closed: an initial write failure prevents Agent execution,
+and terminal write failure prevents a success response. SQLite is a local
+implementation and can be replaced behind the repository contract. This
+architecture is neither conversation memory/checkpointing, eval execution,
+nor raw tracing. See ADR-003.
+
+---
+
+# 13. Safety V0.1
 
 V0.1 capability mode:
 
@@ -484,7 +525,7 @@ Even if it incorrectly selects an execution path in a future extension, the tool
 
 ---
 
-# 13. Golden Cases
+# 14. Golden Cases
 
 The Agent Kernel is considered viable only when it reliably handles:
 
@@ -503,7 +544,7 @@ the registry for any supported input; unknown records are typed `not_found`.
 
 ---
 
-# 14. Evaluation dimensions
+# 15. Evaluation dimensions
 
 At minimum:
 
@@ -525,7 +566,7 @@ At minimum:
 
 ---
 
-# 15. Future architecture
+# 16. Future architecture
 
 Not part of V0.1:
 

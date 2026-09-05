@@ -8,6 +8,7 @@ export class OpsMindApiError extends Error {
     message: string,
     public readonly requestId?: string,
     public readonly status?: number,
+    public readonly runId?: string,
   ) {
     super(message);
     this.name = "OpsMindApiError";
@@ -92,7 +93,7 @@ function isValidTimestamp(value: unknown): value is string {
   return Number.isFinite(Date.parse(value));
 }
 
-const responseKeys = new Set(["request_id", "thread_id", "status", "final_status", "understanding", "decision", "trace", "final_reply", "evidence", "handoff"]);
+const responseKeys = new Set(["request_id", "run_id", "thread_id", "status", "final_status", "understanding", "decision", "trace", "final_reply", "evidence", "handoff"]);
 const understandingKeys = new Set(["primary_intent", "request_type", "symptom", "entities", "risk_signal", "uncertainty"]);
 const decisionKeys = new Set(["action", "goal", "rationale"]);
 const traceKeys = new Set(["node", "task", "profile", "status", "summary"]);
@@ -152,6 +153,7 @@ function isChatResponse(value: unknown): value is ChatResponse {
   if (Array.isArray(trace) && !trace.every((entry) => isObject(entry) && hasOnlyKeys(entry, traceKeys))) return false;
   return (
     typeof value.request_id === "string" &&
+    typeof value.run_id === "string" &&
     typeof value.thread_id === "string" &&
     responseStatuses.has(String(value.status)) &&
     primaryIntents.has(String(understanding.primary_intent)) &&
@@ -189,7 +191,8 @@ function isErrorEnvelope(value: unknown): value is ApiErrorEnvelope {
     isObject(value.error) &&
     typeof value.error.code === "string" &&
     typeof value.error.message === "string" &&
-    typeof value.error.request_id === "string"
+    typeof value.error.request_id === "string" &&
+    (value.error.run_id === undefined || typeof value.error.run_id === "string")
   );
 }
 
@@ -222,6 +225,7 @@ export async function sendChat(payload: ChatRequest, signal?: AbortSignal): Prom
         safeMessages[data.error.code] ?? "请求未能完成，请稍后重试。",
         data.error.request_id,
         response.status,
+        data.error.run_id,
       );
     }
     throw new OpsMindApiError("HTTP_ERROR", "服务返回了无法识别的错误。", undefined, response.status);

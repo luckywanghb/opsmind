@@ -3,6 +3,7 @@ import { OpsMindApiError, sendChat } from "./opsmind";
 
 const response = {
   request_id: "req-42",
+  run_id: "run-42",
   thread_id: "thread-7",
   status: "decision_ready",
   understanding: { primary_intent: "WORKFLOW_ISSUE", request_type: "DIAGNOSE", symptom: "waiting", entities: { work_order: "WO-42" }, risk_signal: "NONE", uncertainty: null },
@@ -30,6 +31,12 @@ describe("sendChat", () => {
     expect(error).toMatchObject({ code, requestId: "req-error", status });
     expect((error as Error).message).toContain(message);
     expect((error as Error).message).not.toContain("private detail");
+  });
+
+  it("preserves a post-start failure run_id for support correlation", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ error: { code: "MODEL_INVOCATION_FAILED", message: "private detail", request_id: "req-error", run_id: "run-error" } }), { status: 502 }));
+    const error = await sendChat({ message: "why", source_context: { channel: "web-demo" } }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "MODEL_INVOCATION_FAILED", requestId: "req-error", runId: "run-error", status: 502 });
   });
 
   it("rejects malformed successful trace data before it reaches the UI", async () => {
