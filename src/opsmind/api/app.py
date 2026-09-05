@@ -395,21 +395,21 @@ def create_app(
             source_context=payload.source_context,
         )
         request.state.run_id = active_run.run_id
-        user_id = payload.source_context.get("user_id")
-        site_id = payload.source_context.get("site_id")
-        state = OpsAgentState(
-            identity=IdentityState(
-                user_id=user_id if isinstance(user_id, str) else None,
-                site_id=site_id if isinstance(site_id, str) else None,
-                source_context=payload.source_context,
-            ),
-            conversation={
-                "thread_id": thread_id,
-                "original_query": payload.message,
-                "current_query": payload.message,
-            },
-        )
         try:
+            user_id = payload.source_context.get("user_id")
+            site_id = payload.source_context.get("site_id")
+            state = OpsAgentState(
+                identity=IdentityState(
+                    user_id=user_id if isinstance(user_id, str) else None,
+                    site_id=site_id if isinstance(site_id, str) else None,
+                    source_context=payload.source_context,
+                ),
+                conversation={
+                    "thread_id": thread_id,
+                    "original_query": payload.message,
+                    "current_query": payload.message,
+                },
+            )
             result = await agent_runtime.run_with_trace(state)
             response = _chat_response(
                 result,

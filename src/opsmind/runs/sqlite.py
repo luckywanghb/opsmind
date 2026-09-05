@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from builtins import list as builtin_list
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Final
 
 from pydantic import BaseModel, ValidationError
 
@@ -30,10 +32,15 @@ from opsmind.state import DecisionState, EvidenceItem, HandoffState, Understandi
 
 SCHEMA_VERSION = 1
 _DOMAIN_TABLES = frozenset({"agent_runs", "run_steps", "evidence_records"})
+_REQUIRED_INDEXES: Final = {
+    "idx_agent_runs_thread_id": ("agent_runs", ("thread_id",)),
+    "idx_agent_runs_started_at": ("agent_runs", ("started_at",)),
+    "idx_agent_runs_lifecycle_status": ("agent_runs", ("lifecycle_status",)),
+}
 
 _CREATE_SCHEMA = """
 CREATE TABLE agent_runs (
-    run_id TEXT PRIMARY KEY,
+    run_id TEXT PRIMARY KEY NOT NULL,
     request_id TEXT NOT NULL UNIQUE,
     thread_id TEXT NOT NULL,
     lifecycle_status TEXT NOT NULL CHECK (
@@ -177,10 +184,15 @@ class SQLiteRunRepository:
         try:
             connection = self._connect()
             try:
+                # Keep all projections in one SQLite read snapshot.  WAL mode
+                # (enabled during initialization) allows a terminal writer to
+                # commit while this consistent snapshot is being consumed.
+                connection.execute("BEGIN")
                 row = connection.execute(
                     "SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)
                 ).fetchone()
                 if row is None:
+                    connection.commit()
                     return None
                 step_rows = connection.execute(
                     """SELECT sequence, node, task, profile, status, summary
@@ -193,7 +205,10 @@ class SQLiteRunRepository:
                        WHERE run_id = ? ORDER BY sequence ASC""",
                     (run_id,),
                 ).fetchall()
+                connection.commit()
             finally:
+                if connection.in_transaction:
+                    connection.rollback()
                 connection.close()
             return self._detail(row, step_rows, evidence_rows)
         except RunPersistenceError:
@@ -314,10 +329,11 @@ class SQLiteRunRepository:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 connection = self._new_connection()
                 try:
+                    connection.execute("PRAGMA journal_mode = WAL")
                     connection.execute("BEGIN IMMEDIATE")
                     connection.execute(
                         """CREATE TABLE IF NOT EXISTS schema_metadata (
-                               key TEXT PRIMARY KEY,
+                               key TEXT PRIMARY KEY NOT NULL,
                                value TEXT NOT NULL
                            )"""
                     )
@@ -366,13 +382,166 @@ class SQLiteRunRepository:
         if not set(_EXPECTED_COLUMNS).issubset(table_names):
             raise IncompatibleRunSchemaError("run schema tables are incomplete")
         for table, expected in _EXPECTED_COLUMNS.items():
-            columns = {
-                str(row["name"])
-                for row in connection.execute(f"PRAGMA table_info({table})")
-            }
+            column_rows = list(
+                connection.execute(f"PRAGMA table_info({table})")
+            )
+            columns = {str(row["name"]) for row in column_rows}
             if columns != expected:
                 raise IncompatibleRunSchemaError(
                     f"run schema table {table} is incompatible"
+                )
+            self._validate_columns(table, column_rows)
+            self._validate_table_checks(connection, table)
+
+        self._validate_primary_keys(connection)
+        self._validate_unique_constraints(connection)
+        self._validate_foreign_keys(connection)
+        self._validate_indexes(connection)
+
+    @staticmethod
+    def _validate_columns(table: str, rows: builtin_list[sqlite3.Row]) -> None:
+        required_not_null = {
+            "schema_metadata": {"key", "value"},
+            "agent_runs": {
+                "run_id",
+                "request_id",
+                "thread_id",
+                "lifecycle_status",
+                "input_message",
+                "source_context_json",
+                "started_at",
+                "runtime_metadata_json",
+            },
+            "run_steps": {
+                "run_id",
+                "sequence",
+                "node",
+                "task",
+                "profile",
+                "status",
+                "summary",
+            },
+            "evidence_records": {
+                "run_id",
+                "sequence",
+                "evidence_id",
+                "evidence_json",
+            },
+        }[table]
+        for row in rows:
+            if bool(row["notnull"]) != (str(row["name"]) in required_not_null):
+                raise IncompatibleRunSchemaError(
+                    f"run schema table {table} has incompatible nullability"
+                )
+
+    @staticmethod
+    def _validate_table_checks(
+        connection: sqlite3.Connection,
+        table: str,
+    ) -> None:
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        sql = "" if row is None or row["sql"] is None else str(row["sql"])
+        normalized = "".join(sql.upper().split())
+        required_fragments = {
+            "agent_runs": (
+                "CHECK(LIFECYCLE_STATUSIN('STARTED','SUCCEEDED','FAILED'))",
+            ),
+            "run_steps": (
+                "CHECK(SEQUENCE>=0)",
+                "CHECK(STATUSIN('COMPLETED','FAILED','BLOCKED'))",
+            ),
+            "evidence_records": ("CHECK(SEQUENCE>=0)",),
+            "schema_metadata": (),
+        }[table]
+        if any(fragment not in normalized for fragment in required_fragments):
+            raise IncompatibleRunSchemaError(
+                f"run schema table {table} is missing required checks"
+            )
+
+    @staticmethod
+    def _validate_primary_keys(connection: sqlite3.Connection) -> None:
+        expected = {
+            "schema_metadata": ("key",),
+            "agent_runs": ("run_id",),
+            "run_steps": ("run_id", "sequence"),
+            "evidence_records": ("run_id", "sequence"),
+        }
+        for table, columns in expected.items():
+            rows = sorted(
+                connection.execute(f"PRAGMA table_info({table})").fetchall(),
+                key=lambda row: int(row["pk"]),
+            )
+            actual = tuple(str(row["name"]) for row in rows if row["pk"])
+            if actual != columns:
+                raise IncompatibleRunSchemaError(
+                    f"run schema table {table} has incompatible primary key"
+                )
+
+    @staticmethod
+    def _validate_unique_constraints(connection: sqlite3.Connection) -> None:
+        expected = {
+            "agent_runs": (("request_id",),),
+            "evidence_records": (("run_id", "evidence_id"),),
+        }
+        for table, constraints in expected.items():
+            indexes = SQLiteRunRepository._index_definitions(connection, table)
+            for columns in constraints:
+                if not any(
+                    unique and index_columns == columns
+                    for _, unique, index_columns in indexes
+                ):
+                    raise IncompatibleRunSchemaError(
+                        f"run schema table {table} is missing required uniqueness"
+                    )
+
+    @staticmethod
+    def _validate_foreign_keys(connection: sqlite3.Connection) -> None:
+        for table in ("run_steps", "evidence_records"):
+            rows = connection.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+            if not any(
+                row["table"] == "agent_runs"
+                and row["from"] == "run_id"
+                and row["to"] == "run_id"
+                and str(row["on_delete"]).upper() == "CASCADE"
+                for row in rows
+            ):
+                raise IncompatibleRunSchemaError(
+                    f"run schema table {table} is missing required foreign key"
+                )
+
+    @staticmethod
+    def _index_definitions(
+        connection: sqlite3.Connection,
+        table: str,
+    ) -> builtin_list[tuple[str, bool, tuple[str, ...]]]:
+        definitions: builtin_list[tuple[str, bool, tuple[str, ...]]] = []
+        for row in connection.execute(f"PRAGMA index_list({table})"):
+            index_name = str(row["name"])
+            columns = tuple(
+                str(info["name"])
+                for info in sorted(
+                    connection.execute(f"PRAGMA index_info({index_name})").fetchall(),
+                    key=lambda info: int(info["seqno"]),
+                )
+            )
+            definitions.append((index_name, bool(row["unique"]), columns))
+        return definitions
+
+    @staticmethod
+    def _validate_indexes(connection: sqlite3.Connection) -> None:
+        definitions = SQLiteRunRepository._index_definitions
+        for name, (table, columns) in _REQUIRED_INDEXES.items():
+            if not any(
+                index_name == name
+                and not unique
+                and index_columns == columns
+                for index_name, unique, index_columns in definitions(connection, table)
+            ):
+                raise IncompatibleRunSchemaError(
+                    f"run schema is missing required index {name}"
                 )
 
     @staticmethod
