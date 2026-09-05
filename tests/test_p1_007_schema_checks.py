@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -124,3 +126,24 @@ def test_v1_checks_reject_invalid_lifecycle_and_child_values(tmp_path: Path) -> 
                    VALUES ('valid-run', 0, 'node', 'ACTION_DECISION', 'HARNESS',
                            'INVALID', 'test')"""
             )
+
+
+def test_separate_repositories_serialize_first_initialization(tmp_path: Path) -> None:
+    for iteration in range(20):
+        path = tmp_path / f"concurrent-init-{iteration}.db"
+        barrier = threading.Barrier(8)
+
+        def initialize(
+            index: int,
+            db_path: Path = path,
+            start_barrier: threading.Barrier = barrier,
+        ) -> list[object]:
+            del index
+            repository = SQLiteRunRepository(db_path)
+            start_barrier.wait(timeout=5)
+            return repository.list(limit=1)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(initialize, range(8)))
+
+        assert results == [[] for _ in range(8)]

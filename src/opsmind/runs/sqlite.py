@@ -32,6 +32,7 @@ from opsmind.state import DecisionState, EvidenceItem, HandoffState, Understandi
 
 SCHEMA_VERSION = 1
 _DOMAIN_TABLES = frozenset({"agent_runs", "run_steps", "evidence_records"})
+_SCHEMA_INITIALIZATION_LOCK = threading.Lock()
 _REQUIRED_INDEXES: Final = {
     "idx_agent_runs_thread_id": ("agent_runs", ("thread_id",)),
     "idx_agent_runs_started_at": ("agent_runs", ("started_at",)),
@@ -322,7 +323,10 @@ class SQLiteRunRepository:
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
-        with self._initialization_lock:
+        # Initialization can be triggered concurrently by separate repository
+        # objects.  Serialize the WAL-mode transition and schema transaction
+        # process-wide so PRAGMA journal_mode never races on the same file.
+        with self._initialization_lock, _SCHEMA_INITIALIZATION_LOCK:
             if self._initialized:
                 return
             try:
@@ -439,6 +443,32 @@ class SQLiteRunRepository:
         connection: sqlite3.Connection,
         table: str,
     ) -> None:
+        expected_checks = {
+            "schema_metadata": frozenset(),
+            "agent_runs": frozenset(
+                {"LIFECYCLE_STATUSIN('STARTED','SUCCEEDED','FAILED')"}
+            ),
+            "run_steps": frozenset(
+                {
+                    "SEQUENCE>=0",
+                    "STATUSIN('COMPLETED','FAILED','BLOCKED')",
+                }
+            ),
+            "evidence_records": frozenset({"SEQUENCE>=0"}),
+        }[table]
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        sql = "" if row is None or row["sql"] is None else str(row["sql"])
+        actual_checks = frozenset(
+            SQLiteRunRepository._normalize_check_expression(expression)
+            for expression in SQLiteRunRepository._extract_check_expressions(sql)
+        )
+        if actual_checks != expected_checks:
+            raise IncompatibleRunSchemaError(
+                f"run schema table {table} has incompatible CHECK constraints"
+            )
         if table == "schema_metadata":
             return
 
@@ -452,30 +482,34 @@ class SQLiteRunRepository:
         connection.execute(f"SAVEPOINT {savepoint}")
         try:
             if table == "agent_runs":
-                run_id = "__schema_check_agent_runs__"
-                try:
-                    connection.execute(
-                        """INSERT INTO agent_runs (
-                               run_id, request_id, thread_id, lifecycle_status,
-                               input_message, source_context_json, started_at,
-                               runtime_metadata_json
-                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            run_id,
-                            "__schema_check_request__",
-                            "__schema_check_thread__",
-                            "INVALID",
-                            "schema validation",
-                            "{}",
-                            "1970-01-01T00:00:00Z",
-                            '{"app_version":"schema-check"}',
-                        ),
-                    )
-                except sqlite3.IntegrityError:
-                    return
-                raise IncompatibleRunSchemaError(
-                    "run schema table agent_runs is missing required checks"
-                )
+                for index, lifecycle_status in enumerate(
+                    ("INVALID", "OTHER_INVALID")
+                ):
+                    try:
+                        connection.execute(
+                            """INSERT INTO agent_runs (
+                                   run_id, request_id, thread_id, lifecycle_status,
+                                   input_message, source_context_json, started_at,
+                                   runtime_metadata_json
+                               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (
+                                f"__schema_check_agent_runs_{index}__",
+                                f"__schema_check_request_{index}__",
+                                "__schema_check_thread__",
+                                lifecycle_status,
+                                "schema validation",
+                                "{}",
+                                "1970-01-01T00:00:00Z",
+                                '{"app_version":"schema-check"}',
+                            ),
+                        )
+                    except sqlite3.IntegrityError:
+                        pass
+                    else:
+                        raise IncompatibleRunSchemaError(
+                            "run schema table agent_runs CHECK is not enforced"
+                        )
+                return
 
             probe_run_id = f"__schema_check_{table}__"
             connection.execute(
@@ -495,52 +529,178 @@ class SQLiteRunRepository:
                 ),
             )
             if table == "run_steps":
-                try:
-                    connection.execute(
-                        """INSERT INTO run_steps
-                           (run_id, sequence, node, task, profile, status, summary)
-                           VALUES (?, -1, 'schema_check', 'ACTION_DECISION',
-                                   'HARNESS', 'completed', 'schema validation')""",
-                        (probe_run_id,),
-                    )
-                except sqlite3.IntegrityError:
-                    pass
-                else:
-                    raise IncompatibleRunSchemaError(
-                        "run schema table run_steps is missing sequence CHECK"
-                    )
-                try:
-                    connection.execute(
-                        """INSERT INTO run_steps
-                           (run_id, sequence, node, task, profile, status, summary)
-                           VALUES (?, 0, 'schema_check', 'ACTION_DECISION',
-                                   'HARNESS', 'invalid', 'schema validation')""",
-                        (probe_run_id,),
-                    )
-                except sqlite3.IntegrityError:
-                    return
-                raise IncompatibleRunSchemaError(
-                    "run schema table run_steps is missing status CHECK"
-                )
+                for sequence in (-1, -2):
+                    try:
+                        connection.execute(
+                            """INSERT INTO run_steps
+                               (run_id, sequence, node, task, profile, status, summary)
+                               VALUES (?, ?, 'schema_check', 'ACTION_DECISION',
+                                       'HARNESS', 'completed', 'schema validation')""",
+                            (probe_run_id, sequence),
+                        )
+                    except sqlite3.IntegrityError:
+                        pass
+                    else:
+                        raise IncompatibleRunSchemaError(
+                            "run schema table run_steps sequence CHECK is not enforced"
+                        )
+                for index, status in enumerate(("invalid", "OTHER_INVALID")):
+                    try:
+                        connection.execute(
+                            """INSERT INTO run_steps
+                               (run_id, sequence, node, task, profile, status, summary)
+                               VALUES (?, ?, 'schema_check', 'ACTION_DECISION',
+                                       'HARNESS', ?, 'schema validation')""",
+                            (probe_run_id, index, status),
+                        )
+                    except sqlite3.IntegrityError:
+                        pass
+                    else:
+                        raise IncompatibleRunSchemaError(
+                            "run schema table run_steps status CHECK is not enforced"
+                        )
+                return
             if table == "evidence_records":
-                try:
-                    connection.execute(
-                        """INSERT INTO evidence_records
-                           (run_id, sequence, evidence_id, evidence_json)
-                           VALUES (?, -1, 'schema-check', '{}')""",
-                        (probe_run_id,),
-                    )
-                except sqlite3.IntegrityError:
-                    return
-                raise IncompatibleRunSchemaError(
-                    "run schema table evidence_records is missing sequence CHECK"
-                )
+                for index, sequence in enumerate((-1, -2)):
+                    try:
+                        connection.execute(
+                            """INSERT INTO evidence_records
+                               (run_id, sequence, evidence_id, evidence_json)
+                               VALUES (?, ?, ?, '{}')""",
+                            (probe_run_id, sequence, f"schema-check-{index}"),
+                        )
+                    except sqlite3.IntegrityError:
+                        pass
+                    else:
+                        raise IncompatibleRunSchemaError(
+                            "run schema table evidence_records CHECK is not enforced"
+                        )
+                return
             raise IncompatibleRunSchemaError(
                 f"run schema table {table} has unknown check requirements"
             )
         finally:
             connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+
+    @staticmethod
+    def _extract_check_expressions(sql: str) -> builtin_list[str]:
+        """Extract real CHECK expressions while ignoring SQL noise."""
+
+        sql = SQLiteRunRepository._strip_sql_comments(sql)
+        expressions: builtin_list[str] = []
+        index = 0
+        length = len(sql)
+        while index < length:
+            character = sql[index]
+            if character == "'":
+                index = SQLiteRunRepository._skip_sql_quoted(sql, index, "'")
+                continue
+            if character in ('"', "`"):
+                index = SQLiteRunRepository._skip_sql_quoted(sql, index, character)
+                continue
+            if character == "[":
+                closing = sql.find("]", index + 1)
+                index = length if closing < 0 else closing + 1
+                continue
+            if sql[index : index + 5].upper() != "CHECK":
+                index += 1
+                continue
+            before = sql[index - 1] if index else " "
+            after_index = index + 5
+            after = sql[after_index] if after_index < length else " "
+            if (before.isalnum() or before == "_") or (
+                after.isalnum() or after == "_"
+            ):
+                index += 1
+                continue
+            open_paren = after_index
+            while open_paren < length and sql[open_paren].isspace():
+                open_paren += 1
+            if open_paren >= length or sql[open_paren] != "(":
+                index = after_index
+                continue
+            expression_start = open_paren + 1
+            depth = 1
+            index = expression_start
+            while index < length and depth:
+                character = sql[index]
+                if character == "'":
+                    index = SQLiteRunRepository._skip_sql_quoted(sql, index, "'")
+                    continue
+                if character in ('"', "`"):
+                    index = SQLiteRunRepository._skip_sql_quoted(sql, index, character)
+                    continue
+                if character == "[":
+                    closing = sql.find("]", index + 1)
+                    index = length if closing < 0 else closing + 1
+                    continue
+                if character == "(":
+                    depth += 1
+                elif character == ")":
+                    depth -= 1
+                    if depth == 0:
+                        expressions.append(sql[expression_start:index])
+                        index += 1
+                        break
+                index += 1
+        return expressions
+
+    @staticmethod
+    def _strip_sql_comments(sql: str) -> str:
+        """Remove SQL comments without interpreting comment markers in strings."""
+
+        output: builtin_list[str] = []
+        index = 0
+        while index < len(sql):
+            if sql[index] == "'":
+                end = SQLiteRunRepository._skip_sql_quoted(sql, index, "'")
+                output.append(sql[index:end])
+                index = end
+                continue
+            if sql[index] in ('"', "`"):
+                end = SQLiteRunRepository._skip_sql_quoted(sql, index, sql[index])
+                output.append(sql[index:end])
+                index = end
+                continue
+            if sql[index] == "[":
+                end = sql.find("]", index + 1)
+                end = len(sql) if end < 0 else end + 1
+                output.append(sql[index:end])
+                index = end
+                continue
+            if sql[index : index + 2] == "--":
+                end = sql.find("\n", index + 2)
+                end = len(sql) if end < 0 else end
+                output.append(" ")
+                index = end
+                continue
+            if sql[index : index + 2] == "/*":
+                end = sql.find("*/", index + 2)
+                end = len(sql) if end < 0 else end + 2
+                output.append(" ")
+                index = end
+                continue
+            output.append(sql[index])
+            index += 1
+        return "".join(output)
+
+    @staticmethod
+    def _skip_sql_quoted(sql: str, start: int, quote: str) -> int:
+        index = start + 1
+        while index < len(sql):
+            if sql[index] != quote:
+                index += 1
+                continue
+            if index + 1 < len(sql) and sql[index + 1] == quote:
+                index += 2
+                continue
+            return index + 1
+        return len(sql)
+
+    @staticmethod
+    def _normalize_check_expression(expression: str) -> str:
+        return "".join(expression.upper().split())
 
     @staticmethod
     def _validate_primary_keys(connection: sqlite3.Connection) -> None:
