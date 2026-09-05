@@ -451,7 +451,7 @@ class SQLiteRunRepository:
             "run_steps": frozenset(
                 {
                     "SEQUENCE>=0",
-                    "STATUSIN('COMPLETED','FAILED','BLOCKED')",
+                    "STATUSIN('completed','failed','blocked')",
                 }
             ),
             "evidence_records": frozenset({"SEQUENCE>=0"}),
@@ -700,7 +700,34 @@ class SQLiteRunRepository:
 
     @staticmethod
     def _normalize_check_expression(expression: str) -> str:
-        return "".join(expression.upper().split())
+        # Normalize SQL keywords/identifiers and outer whitespace without
+        # changing the case or contents of string literals. SQLite compares
+        # TEXT literals case-sensitively, so upper-casing the whole expression
+        # could accept a semantically incompatible schema.
+        output: builtin_list[str] = []
+        index = 0
+        while index < len(expression):
+            character = expression[index]
+            if character == "'":
+                end = SQLiteRunRepository._skip_sql_quoted(expression, index, "'")
+                output.append(expression[index:end])
+                index = end
+                continue
+            if character in ('"', "`"):
+                end = SQLiteRunRepository._skip_sql_quoted(expression, index, character)
+                output.append(expression[index:end].upper())
+                index = end
+                continue
+            if character == "[":
+                end = expression.find("]", index + 1)
+                end = len(expression) if end < 0 else end + 1
+                output.append(expression[index:end].upper())
+                index = end
+                continue
+            if not character.isspace():
+                output.append(character.upper())
+            index += 1
+        return "".join(output)
 
     @staticmethod
     def _validate_primary_keys(connection: sqlite3.Connection) -> None:
