@@ -5,6 +5,7 @@
 - Task: TASK-P1-006 / GitHub Issue #16
 - Role: Developer — Luna Max
 - Branch: `task/TASK-P1-006-dev`
+- Escalation remediation HEAD: `2b4b5360f4cbfca90d842df087922c46767a45a7`
 - Base: `401422d307ce334616c01dfce6e0172eb2bb03a5`
 - Stage: TEST → independent Tester / Reviewer
 - Architecture impact: `ARCHITECTURE_CHANGE`
