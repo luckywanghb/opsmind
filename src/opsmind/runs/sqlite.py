@@ -439,27 +439,108 @@ class SQLiteRunRepository:
         connection: sqlite3.Connection,
         table: str,
     ) -> None:
-        row = connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (table,),
-        ).fetchone()
-        sql = "" if row is None or row["sql"] is None else str(row["sql"])
-        normalized = "".join(sql.upper().split())
-        required_fragments = {
-            "agent_runs": (
-                "CHECK(LIFECYCLE_STATUSIN('STARTED','SUCCEEDED','FAILED'))",
-            ),
-            "run_steps": (
-                "CHECK(SEQUENCE>=0)",
-                "CHECK(STATUSIN('COMPLETED','FAILED','BLOCKED'))",
-            ),
-            "evidence_records": ("CHECK(SEQUENCE>=0)",),
-            "schema_metadata": (),
-        }[table]
-        if any(fragment not in normalized for fragment in required_fragments):
-            raise IncompatibleRunSchemaError(
-                f"run schema table {table} is missing required checks"
+        if table == "schema_metadata":
+            return
+
+        # SQLite does not expose CHECK expressions through a PRAGMA.  Do not
+        # treat sqlite_master.sql text as proof: comments and string literals
+        # can contain arbitrary CHECK-looking text.  Instead, exercise each
+        # required invariant with a deliberately invalid row inside a
+        # savepoint.  The savepoint is always rolled back, so initialization
+        # leaves the existing database contents untouched.
+        savepoint = f"schema_check_{table}"
+        connection.execute(f"SAVEPOINT {savepoint}")
+        try:
+            if table == "agent_runs":
+                run_id = "__schema_check_agent_runs__"
+                try:
+                    connection.execute(
+                        """INSERT INTO agent_runs (
+                               run_id, request_id, thread_id, lifecycle_status,
+                               input_message, source_context_json, started_at,
+                               runtime_metadata_json
+                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            run_id,
+                            "__schema_check_request__",
+                            "__schema_check_thread__",
+                            "INVALID",
+                            "schema validation",
+                            "{}",
+                            "1970-01-01T00:00:00Z",
+                            '{"app_version":"schema-check"}',
+                        ),
+                    )
+                except sqlite3.IntegrityError:
+                    return
+                raise IncompatibleRunSchemaError(
+                    "run schema table agent_runs is missing required checks"
+                )
+
+            probe_run_id = f"__schema_check_{table}__"
+            connection.execute(
+                """INSERT INTO agent_runs (
+                       run_id, request_id, thread_id, lifecycle_status,
+                       input_message, source_context_json, started_at,
+                       runtime_metadata_json
+                   ) VALUES (?, ?, ?, 'STARTED', ?, ?, ?, ?)""",
+                (
+                    probe_run_id,
+                    f"{probe_run_id}_request",
+                    f"{probe_run_id}_thread",
+                    "schema validation",
+                    "{}",
+                    "1970-01-01T00:00:00Z",
+                    '{"app_version":"schema-check"}',
+                ),
             )
+            if table == "run_steps":
+                try:
+                    connection.execute(
+                        """INSERT INTO run_steps
+                           (run_id, sequence, node, task, profile, status, summary)
+                           VALUES (?, -1, 'schema_check', 'ACTION_DECISION',
+                                   'HARNESS', 'completed', 'schema validation')""",
+                        (probe_run_id,),
+                    )
+                except sqlite3.IntegrityError:
+                    pass
+                else:
+                    raise IncompatibleRunSchemaError(
+                        "run schema table run_steps is missing sequence CHECK"
+                    )
+                try:
+                    connection.execute(
+                        """INSERT INTO run_steps
+                           (run_id, sequence, node, task, profile, status, summary)
+                           VALUES (?, 0, 'schema_check', 'ACTION_DECISION',
+                                   'HARNESS', 'invalid', 'schema validation')""",
+                        (probe_run_id,),
+                    )
+                except sqlite3.IntegrityError:
+                    return
+                raise IncompatibleRunSchemaError(
+                    "run schema table run_steps is missing status CHECK"
+                )
+            if table == "evidence_records":
+                try:
+                    connection.execute(
+                        """INSERT INTO evidence_records
+                           (run_id, sequence, evidence_id, evidence_json)
+                           VALUES (?, -1, 'schema-check', '{}')""",
+                        (probe_run_id,),
+                    )
+                except sqlite3.IntegrityError:
+                    return
+                raise IncompatibleRunSchemaError(
+                    "run schema table evidence_records is missing sequence CHECK"
+                )
+            raise IncompatibleRunSchemaError(
+                f"run schema table {table} has unknown check requirements"
+            )
+        finally:
+            connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
     @staticmethod
     def _validate_primary_keys(connection: sqlite3.Connection) -> None:

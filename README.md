@@ -34,15 +34,20 @@ safety boundaries.
 - TASK-001 repository foundation and typed state: complete
 - Minimal Agent kernel and DeepSeek provider integration: complete
 - HTTP runtime: `GET /api/v1/health` and `POST /api/v1/chat`
+- Run persistence: validated runs are queryable via `GET /api/v1/runs` and
+  `GET /api/v1/runs/{run_id}`; conversation checkpoints/restoration are not
+  supported
 - Runtime capability: `READ_ONLY` (three synthetic typed query tools)
 - GitHub Issues and Pull Requests: development control plane
 - Delivery Reporter: required at meaningful task transitions
 
 The current implementation provides the validated V0.1 `OpsAgentState`, a
 provider-neutral Model Gateway, a bounded model-driven LangGraph loop, typed
-synthetic work-order/permission/incident queries, and a typed FastAPI surface.
-Persistence, RAG, authentication, and write actions remain intentionally
-absent.  D01–D03 are fixtures; the graph has no case-specific routing.
+synthetic work-order/permission/incident queries, a typed FastAPI surface, and
+versioned persistence for validated Agent runs. Persistence is an audit record
+only: it does not provide conversation checkpoints, restoration, or memory.
+RAG, authentication, and write actions remain intentionally absent. D01–D03
+are fixtures; the graph has no case-specific routing.
 
 ## Development
 
