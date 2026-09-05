@@ -490,8 +490,8 @@ class SQLiteRunRepository:
             indexes = SQLiteRunRepository._index_definitions(connection, table)
             for columns in constraints:
                 if not any(
-                    unique and index_columns == columns
-                    for _, unique, index_columns in indexes
+                    unique and not partial and index_columns == columns
+                    for _, unique, partial, index_columns in indexes
                 ):
                     raise IncompatibleRunSchemaError(
                         f"run schema table {table} is missing required uniqueness"
@@ -516,8 +516,8 @@ class SQLiteRunRepository:
     def _index_definitions(
         connection: sqlite3.Connection,
         table: str,
-    ) -> builtin_list[tuple[str, bool, tuple[str, ...]]]:
-        definitions: builtin_list[tuple[str, bool, tuple[str, ...]]] = []
+    ) -> builtin_list[tuple[str, bool, bool, tuple[str, ...]]]:
+        definitions: builtin_list[tuple[str, bool, bool, tuple[str, ...]]] = []
         for row in connection.execute(f"PRAGMA index_list({table})"):
             index_name = str(row["name"])
             columns = tuple(
@@ -527,7 +527,9 @@ class SQLiteRunRepository:
                     key=lambda info: int(info["seqno"]),
                 )
             )
-            definitions.append((index_name, bool(row["unique"]), columns))
+            definitions.append(
+                (index_name, bool(row["unique"]), bool(row["partial"]), columns)
+            )
         return definitions
 
     @staticmethod
@@ -538,7 +540,10 @@ class SQLiteRunRepository:
                 index_name == name
                 and not unique
                 and index_columns == columns
-                for index_name, unique, index_columns in definitions(connection, table)
+                for index_name, unique, partial, index_columns in definitions(
+                    connection, table
+                )
+                if not partial
             ):
                 raise IncompatibleRunSchemaError(
                     f"run schema is missing required index {name}"
