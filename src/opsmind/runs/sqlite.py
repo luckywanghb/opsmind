@@ -751,19 +751,32 @@ class SQLiteRunRepository:
     @staticmethod
     def _validate_unique_constraints(connection: sqlite3.Connection) -> None:
         expected = {
-            "agent_runs": (("request_id",),),
-            "evidence_records": (("run_id", "evidence_id"),),
+            "schema_metadata": frozenset({(False, ("key",))}),
+            "agent_runs": frozenset(
+                {
+                    (False, ("run_id",)),
+                    (False, ("request_id",)),
+                }
+            ),
+            "run_steps": frozenset({(False, ("run_id", "sequence"))}),
+            "evidence_records": frozenset(
+                {
+                    (False, ("run_id", "sequence")),
+                    (False, ("run_id", "evidence_id")),
+                }
+            ),
         }
-        for table, constraints in expected.items():
+        for table, expected_constraints in expected.items():
             indexes = SQLiteRunRepository._index_definitions(connection, table)
-            for columns in constraints:
-                if not any(
-                    unique and not partial and index_columns == columns
-                    for _, unique, partial, index_columns in indexes
-                ):
-                    raise IncompatibleRunSchemaError(
-                        f"run schema table {table} is missing required uniqueness"
-                    )
+            actual_constraints = frozenset(
+                (partial, columns)
+                for _, unique, partial, columns in indexes
+                if unique
+            )
+            if actual_constraints != expected_constraints:
+                raise IncompatibleRunSchemaError(
+                    f"run schema table {table} has incompatible uniqueness"
+                )
 
     @staticmethod
     def _validate_foreign_keys(connection: sqlite3.Connection) -> None:
