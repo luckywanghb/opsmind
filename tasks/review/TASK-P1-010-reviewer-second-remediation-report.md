@@ -11,6 +11,9 @@ closed all original findings but reported one new MAJOR: a 513-character
 `site_id` was accepted, silently truncated in persistence, then treated as a
 different identity when the identical original value appeared again.
 
+- Second Reviewer remediation Product HEAD:
+  `046eade22ce1fe5b7cf777aaa20e26e3077f4b29`
+
 ## Remediation
 
 Conversation identity has one shared 512-character durable limit. The
