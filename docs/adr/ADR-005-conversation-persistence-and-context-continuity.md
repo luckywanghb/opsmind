@@ -2,7 +2,13 @@
 
 ## Status
 
-Implemented for TASK-P1-010. PM Architecture Gate pending.
+Accepted.
+
+TASK-P1-010 passed the PM Architecture Gate on 2026-09-07. The Conversation
+Persistence architecture described by this ADR is accepted. Distributed
+locking, crashed active-claim recovery, cross-domain Run/Conversation terminal
+transactions, and transcript retention/cleanup automation remain accepted
+deferred work and do not block this ADR.
 
 ## Context
 

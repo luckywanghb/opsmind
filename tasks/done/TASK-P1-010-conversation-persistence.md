@@ -2,7 +2,15 @@
 
 ## Status
 
-`FINAL TESTER PASS — RETURNED TO PM FINAL GATE`
+`DONE`
+
+- PM Architecture Gate: `APPROVED`
+- Independent Tester: `PASS — B0/M0/m0/N0`
+- Sol Medium Reviewer: `APPROVE — B0/M0/m0/N0`
+- Merge: `AUTHORIZED`
+- Product SHA: `046eade22ce1fe5b7cf777aaa20e26e3077f4b29`
+- Final pre-merge evidence HEAD:
+  `7a57191b13e2e5455f84e513d713990e3119f249`
 
 ## Risk
 
@@ -13,9 +21,9 @@
 - Issue: `#24`
 - Branch: `task/TASK-P1-010-dev`
 - Base: `4d01d7c9995d86c91506e3d1f475050c113f75a3`
-- PR: `#25` (`DRAFT`)
-- PM Architecture Gate: `PENDING`
-- Merge: `PROHIBITED`
+- PR: `#25` (`DRAFT`, authorized to transition after finalization CI)
+- PM Architecture Gate: `APPROVED`
+- Merge: `AUTHORIZED`
 
 ## Goal
 
@@ -66,7 +74,7 @@ continuation.
 - Independent Tester: `PASS`, `BLOCKER=0`, `MAJOR=0`.
 - Reviewer: `APPROVE`, `BLOCKER=0`, `MAJOR=0`.
 - CI pass on the exact reviewed HEAD.
-- PM Architecture Gate remains pending; no merge before approval.
+- PM Architecture Gate approved; merge is authorized after finalization CI.
 
 ## Developer validation snapshot
 
@@ -136,4 +144,22 @@ continuation.
   modifying product code or the formal report.
 - Existing Sol Medium Reviewer approval remains valid because no product
   implementation changed after `046eade`.
-- Returned directly to PM Final Gate. PR remains Draft and merge prohibited.
+- Returned directly to PM Final Gate; at that point PR remained Draft and
+  merge prohibited pending the final PM decision recorded below.
+
+## PM final decision
+
+- PM Architecture Gate: `APPROVED`.
+- Task status: `READY_TO_MERGE`.
+- Merge: `AUTHORIZED` after the pure-governance finalization commit passes CI.
+- No product changes are permitted after the approved Product SHA.
+
+## Accepted limitations
+
+- Distributed lock is not implemented.
+- Crashed active-claim recovery is not implemented.
+- Run and Conversation remain independent terminal transactions.
+- Transcript retention/cleanup automation is not implemented.
+- Live DeepSeek Eval was not run because no authorized credential was present.
+
+These are accepted deferred limitations, not unresolved findings.

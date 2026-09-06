@@ -4,7 +4,10 @@
 
 - Base: `4d01d7c9995d86c91506e3d1f475050c113f75a3`
 - Product HEAD: `046eade22ce1fe5b7cf777aaa20e26e3077f4b29`
-- Delivery / Reviewed HEAD: `362468d81de9895632e351acea20a782c9476901`
+- Final pre-merge evidence HEAD:
+  `7a57191b13e2e5455f84e513d713990e3119f249`
+- Sol Medium Reviewed HEAD:
+  `362468d81de9895632e351acea20a782c9476901`
 - Issue: `#24`
 - PR: `#25` (`DRAFT`, unmerged)
 - CI on exact Reviewed HEAD: Python PASS; Web PASS
@@ -79,8 +82,12 @@
 
 ## PM Architecture Gate
 
-`HOLD REMEDIATION SUPPLIED — AWAITING PM FINAL DECISION`
+`APPROVED`
 
 ## Merge
 
-`PROHIBITED`
+`AUTHORIZED`
+
+## Task
+
+`READY_TO_MERGE`
