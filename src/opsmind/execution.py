@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
-from opsmind.agent.graph import bounded_trace_summary
+from opsmind.agent.graph import AgentToolCall, bounded_trace_summary
 from opsmind.agent.grounding import stable_evidence_items
 from opsmind.api.run_observability import (
     normalized_error_code,
@@ -23,13 +23,21 @@ from opsmind.api.schemas import (
     ChatResponse,
     ChatUnderstanding,
 )
-from opsmind.evals.models import EvaluationObservation, ToolCallObservation
+from opsmind.evals.models import (
+    EvaluationObservation,
+    EvaluationObservationErrorCode,
+    ToolCallObservation,
+)
 from opsmind.runs import RunPersistenceError, RunPersistenceService
 from opsmind.state import (
     AgentAction,
+    DecisionState,
+    HandoffState,
     IdentityState,
+    LoopState,
     OpsAgentState,
     TaskStatus,
+    UnderstandingState,
 )
 
 
@@ -158,6 +166,50 @@ def chat_response_from_result(
     )
 
 
+def _bounded_observation_text(
+    value: object,
+    *,
+    fallback: str,
+    max_length: int,
+) -> str:
+    if isinstance(value, str) and value:
+        return value[:max_length]
+    return fallback
+
+
+def _safe_tool_call(
+    call: AgentToolCall,
+) -> tuple[ToolCallObservation, EvaluationObservationErrorCode | None]:
+    """Project tool metadata without letting eval-only limits affect Chat."""
+
+    try:
+        return (
+            ToolCallObservation(
+                tool_name=call.tool_name,
+                arguments=call.arguments,
+                status=call.status,
+                error_code=call.error_code,
+            ),
+            None,
+        )
+    except (ValidationError, TypeError, ValueError, AttributeError):
+        return (
+            ToolCallObservation(
+                tool_name=_bounded_observation_text(
+                    getattr(call, "tool_name", None),
+                    fallback="unknown_tool",
+                    max_length=128,
+                ),
+                arguments={},
+                status="unavailable",
+                error_code=(
+                    EvaluationObservationErrorCode.TOOL_ARGUMENTS_UNAVAILABLE.value
+                ),
+            ),
+            EvaluationObservationErrorCode.TOOL_ARGUMENTS_UNAVAILABLE,
+        )
+
+
 def _observation(
     result: AgentRunResult,
     *,
@@ -165,6 +217,11 @@ def _observation(
     run_id: str,
     thread_id: str,
 ) -> EvaluationObservation:
+    state = result.state
+    terminal = state.task.status
+    if terminal is None:
+        raise ValueError("successful Agent result has no terminal status")
+
     actions: list[AgentAction] = []
     for event in result.events:
         if event.node != "decide_action":
@@ -174,39 +231,60 @@ def _observation(
         except ValueError:
             continue
         actions.append(action)
-    tool_calls = [
-        ToolCallObservation(
-            tool_name=call.tool_name,
-            arguments=call.arguments,
-            status=call.status,
-            error_code=call.error_code,
+    tool_calls: list[ToolCallObservation] = []
+    observation_error_code: EvaluationObservationErrorCode | None = None
+    for call in result.tool_calls:
+        projected_call, call_error_code = _safe_tool_call(call)
+        tool_calls.append(projected_call)
+        if call_error_code is not None:
+            observation_error_code = call_error_code
+
+    try:
+        return EvaluationObservation(
+            run_id=run_id,
+            request_id=request_id,
+            thread_id=thread_id,
+            lifecycle_status="SUCCEEDED",
+            understanding=state.understanding,
+            final_decision=state.decision,
+            action_sequence=actions,
+            tool_calls=tool_calls,
+            loop=state.loop,
+            evidence=list(state.evidence.items),
+            handoff=state.handoff,
+            observation_error_code=observation_error_code,
+            terminal_status=terminal.value,
+            reply_nonempty=bool(
+                state.response.message and state.response.message.strip()
+            ),
+            loop_converged=(
+                terminal is not TaskStatus.ACTIVE
+                and state.loop.round_count <= state.loop.max_rounds
+                and state.loop.tool_call_count <= state.loop.max_tool_calls
+            ),
         )
-        for call in result.tool_calls
-    ]
-    state = result.state
-    terminal = state.task.status
-    if terminal is None:
-        raise ValueError("successful Agent result has no terminal status")
-    return EvaluationObservation(
-        run_id=run_id,
-        request_id=request_id,
-        thread_id=thread_id,
-        lifecycle_status="SUCCEEDED",
-        understanding=state.understanding,
-        final_decision=state.decision,
-        action_sequence=actions,
-        tool_calls=tool_calls,
-        loop=state.loop,
-        evidence=list(state.evidence.items),
-        handoff=state.handoff,
-        terminal_status=terminal.value,
-        reply_nonempty=bool(state.response.message and state.response.message.strip()),
-        loop_converged=(
-            terminal is not TaskStatus.ACTIVE
-            and state.loop.round_count <= state.loop.max_rounds
-            and state.loop.tool_call_count <= state.loop.max_tool_calls
-        ),
-    )
+    except (ValidationError, TypeError, ValueError):
+        # Eval-only projection budgets are deliberately fail-closed for evals,
+        # but can never reclassify a successful product execution.
+        return EvaluationObservation(
+            run_id=run_id,
+            request_id=request_id,
+            thread_id=thread_id,
+            lifecycle_status="SUCCEEDED",
+            understanding=UnderstandingState(),
+            final_decision=DecisionState(),
+            action_sequence=[],
+            tool_calls=[],
+            loop=LoopState(),
+            evidence=[],
+            handoff=HandoffState(),
+            observation_error_code=(
+                EvaluationObservationErrorCode.PROJECTION_UNAVAILABLE
+            ),
+            terminal_status=terminal.value,
+            reply_nonempty=False,
+            loop_converged=False,
+        )
 
 
 class AgentExecutionService:
