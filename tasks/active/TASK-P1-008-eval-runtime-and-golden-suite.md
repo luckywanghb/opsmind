@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_PROGRESS`
+`PM_ARCHITECTURE_GATE` (`PENDING`)
 
 ## Risk
 
@@ -87,5 +87,6 @@ result separately from deterministic/offline validation.
 
 ## Handoff state
 
-Developer implementation is handed to independent Tester/Reviewer after the
-required local validation. PM Architecture Gate and merge remain pending.
+Developer implementation has passed the final independent Tester and Reviewer
+gates after the required local validation. The PM Architecture Gate remains
+pending, and merge remains prohibited.

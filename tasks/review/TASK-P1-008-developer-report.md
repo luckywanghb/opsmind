@@ -7,7 +7,7 @@
 - Branch: `task/TASK-P1-008-dev`
 - Base SHA: `e0e0675d6c638401d91643aa546bb106b3188dca`
 - Implementation commit: `0b01dda`
-- Stage: `TEST` → independent Tester / Reviewer
+- Stage: `PM_ARCHITECTURE_GATE` (`PENDING`)
 - Architecture impact: `ARCHITECTURE_CHANGE`
 - PM Architecture Gate: `PENDING`
 - Merge: `PROHIBITED`
@@ -104,10 +104,16 @@ the coordinator-verified result requested for this closeout.
 - Live DeepSeek evaluation is not available without the configured key.
 - C01/C09/C12 expose the intentionally unimplemented knowledge, log-search,
   and conversation-persistence capabilities.
-- Independent Tester, Reviewer, CI, and PM Architecture Gate remain pending.
+- Independent Tester: `PASS` (0 BLOCKER / 0 MAJOR / 0 MINOR / 0 NIT).
+- Independent Reviewer: `APPROVE` (0 BLOCKER / 0 MAJOR / 0 MINOR / 0 NIT).
+- CI: `NOT_RUN / PENDING` because the branch has not been pushed and GitHub
+  CLI authentication is invalid; no CI URL or result is claimed.
+- PM Architecture Gate remains `PENDING`; merge remains `PROHIBITED`.
 
-The implementation is ready for independent Tester/Reviewer handoff. Merge
-remains prohibited until the required governance gates pass.
+The final independent Tester/Reviewer handoff is complete and recorded in
+`tasks/review/TASK-P1-008-delivery-handoff.md`. The PM Architecture Gate
+remains pending, and merge remains prohibited until the required governance
+gates pass.
 
 ## Post-Tester remediation addendum
 
@@ -150,7 +156,9 @@ Run schema v1, and public Chat contracts.
 
 The detailed record is
 `tasks/review/TASK-P1-008-reviewer-remediation-report.md`. Final local
-verification for this remediation was 582 passed and 1 deselected in the full
-pytest run, with Ruff, Mypy, and `git diff --check` passing. The branch remains
-unpushed and unmerged pending independent Reviewer re-entry and the PM
-Architecture Gate.
+verification for the Developer remediation was 582 passed and 1 deselected in
+the full pytest run, with Ruff, Mypy, and `git diff --check` passing. The final
+independent Tester and Reviewer evidence subsequently confirmed 590 passed and
+the Reviewer Gate as met. The branch remains unpushed and unmerged pending the
+PM Architecture Gate; GitHub Issue/PR remain `PENDING_AUTH` and CI remains
+`NOT_RUN / PENDING`.
