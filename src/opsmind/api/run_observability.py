@@ -5,6 +5,7 @@ from __future__ import annotations
 from opsmind.agent.errors import AgentInputError
 from opsmind.agent.graph import AgentTraceEvent
 from opsmind.api.schemas import ChatResponse
+from opsmind.conversations import ConversationPersistenceError
 from opsmind.models import (
     ModelInvocationError,
     ModelProfile,
@@ -35,6 +36,8 @@ def normalized_error_code(error: Exception) -> str:
         return "MODEL_INVOCATION_FAILED"
     if isinstance(error, AgentInputError):
         return "INVALID_AGENT_INPUT"
+    if isinstance(error, ConversationPersistenceError):
+        return error.code
     return "INTERNAL_SERVER_ERROR"
 
 

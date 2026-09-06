@@ -13,6 +13,7 @@ from opsmind.agent.grounding import stable_evidence_items
 from opsmind.agent.schemas import GroundedTerminalMode
 from opsmind.state import (
     AgentAction,
+    ConversationHistoryItem,
     DecisionState,
     EvidenceItem,
     FactsState,
@@ -36,6 +37,13 @@ class UnderstandingContext(StateModel):
     original_query: str | None = None
     summary: str | None = None
     previous_resolution_status: ResolutionStatus | None = None
+    recent_turns: list[ConversationHistoryItem] = Field(default_factory=list)
+    task_objective: str | None = None
+    task_constraints: list[str] = Field(default_factory=list)
+    confirmed_facts: list[str] = Field(default_factory=list)
+    unresolved_questions: list[str] = Field(default_factory=list)
+    important_entities: dict[str, str | int | bool] = Field(default_factory=dict)
+    last_assistant_message: str | None = None
     source_context: FiniteJsonObject = Field(default_factory=dict)
 
 
@@ -208,6 +216,20 @@ def build_understanding_context(state: OpsAgentState) -> UnderstandingContext:
         summary=canonical_state.conversation.summary,
         previous_resolution_status=(
             canonical_state.conversation.previous_resolution_status
+        ),
+        recent_turns=[
+            item.model_copy(deep=True)
+            for item in canonical_state.conversation.recent_turns
+        ],
+        task_objective=canonical_state.task.objective,
+        task_constraints=list(canonical_state.task.constraints),
+        confirmed_facts=list(canonical_state.facts.confirmed),
+        unresolved_questions=list(canonical_state.facts.unresolved_questions),
+        important_entities=deepcopy(
+            canonical_state.conversation.important_entities
+        ),
+        last_assistant_message=(
+            canonical_state.conversation.last_assistant_message
         ),
         source_context=deepcopy(canonical_state.identity.source_context),
     )

@@ -22,6 +22,10 @@ from fastapi.testclient import TestClient
 from opsmind.agent.schemas import ActionDecisionOutput, RequestUnderstandingOutput
 from opsmind.api.app import create_app
 from opsmind.api.runtime import OpsAgentRuntime
+from opsmind.conversations import (
+    ConversationPersistenceService,
+    SQLiteConversationRepository,
+)
 from opsmind.evals import (
     CaseEvaluationContext,
     EvalAssertion,
@@ -317,6 +321,9 @@ async def test_known_gap_does_not_convert_a_blocking_failure_to_pass(
     execution_service = AgentExecutionService(
         runtime,
         RunPersistenceService(run_repository, app_version="tester"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(run_repository.path)
+        ),
     )
     eval_repository = SQLiteEvalRepository(database_path)
     persistence = EvalPersistenceService(
@@ -483,6 +490,9 @@ async def test_runner_marks_job_failed_when_terminal_persistence_fails(
     execution_service = AgentExecutionService(
         runtime,
         RunPersistenceService(run_repository, app_version="tester"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(run_repository.path)
+        ),
     )
     eval_repository = SQLiteEvalRepository(tmp_path / "opsmind.db")
     failing_repository = _FinalizeFailureRepository(eval_repository)
@@ -532,6 +542,9 @@ def _build_concurrent_runner(
     execution_service = AgentExecutionService(
         runtime,
         RunPersistenceService(run_repository, app_version="tester"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(run_repository.path)
+        ),
     )
     persistence = EvalPersistenceService(
         eval_repository,
@@ -645,6 +658,9 @@ async def test_multiturn_links_keep_thread_but_rotate_request_and_run_ids(
     execution_service = AgentExecutionService(
         runtime,
         RunPersistenceService(run_repository, app_version="tester"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(run_repository.path)
+        ),
     )
     eval_repository = SQLiteEvalRepository(database_path)
     persistence = EvalPersistenceService(
@@ -672,7 +688,10 @@ async def test_multiturn_links_keep_thread_but_rotate_request_and_run_ids(
     second_messages = provider.history[2].messages
     second_prompt = "\n".join(message.content for message in second_messages)
     assert "second" in second_prompt
-    assert "first" not in second_prompt
+    assert "first" in second_prompt
+    restored = json.loads(second_messages[1].content)
+    assert restored["original_query"] == "first"
+    assert restored["recent_turns"] == [{"role": "USER", "content": "first"}]
 
 
 @pytest.mark.asyncio
@@ -703,6 +722,9 @@ async def test_eval_error_persists_only_safe_codes_and_no_provider_sentinel(
     execution_service = AgentExecutionService(
         runtime,
         RunPersistenceService(run_repository, app_version="tester"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(run_repository.path)
+        ),
     )
     eval_repository = SQLiteEvalRepository(database_path)
     persistence = EvalPersistenceService(
@@ -802,6 +824,9 @@ async def test_malformed_tool_result_does_not_persist_raw_tool_payload(
     execution_service = AgentExecutionService(
         runtime,
         RunPersistenceService(run_repository, app_version="tester"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(run_repository.path)
+        ),
     )
     eval_repository = SQLiteEvalRepository(database_path)
     persistence = EvalPersistenceService(

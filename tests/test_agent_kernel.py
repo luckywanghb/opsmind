@@ -277,6 +277,13 @@ def test_context_builders_expose_only_node_specific_fields() -> None:
         "original_query",
         "summary",
         "previous_resolution_status",
+        "recent_turns",
+        "task_objective",
+        "task_constraints",
+        "confirmed_facts",
+        "unresolved_questions",
+        "important_entities",
+        "last_assistant_message",
         "source_context",
     }
 

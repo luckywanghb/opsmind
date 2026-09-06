@@ -497,7 +497,44 @@ the backend eval runtime; it is not raw tracing. See ADR-003 and ADR-004.
 
 ---
 
-# 13. Safety V0.1
+# 13. Conversation persistence and continuity
+
+Conversation continuity is an application-harness boundary outside LangGraph:
+
+```text
+ConversationPersistenceService
+  → ConversationRepository
+    → SQLiteConversationRepository
+```
+
+Each request has a new `request_id` and `run_id`; related requests retain one
+`thread_id`. The service atomically claims the thread and appends the USER
+turn, restores a structured checkpoint plus at most six recent turns into a
+fresh `OpsAgentState`, executes the existing graph, then atomically appends any
+safe ASSISTANT reply and updates the checkpoint.
+
+`conversation_threads.active_run_id` rejects concurrent cross-instance
+ownership while an in-process keyed lock serializes normal same-thread calls.
+Optimistic `revision` predicates protect both start and terminal writes from
+lost updates. Thread turn ordering uses a contiguous integer `sequence`, never
+timestamps alone.
+
+Checkpoint projection contains only bounded conversation-level state:
+original query, resolution state, task fields, confirmed facts, unresolved
+questions, deterministic understanding summary, scalar important entities,
+last safe assistant reply, and latest run identity. Full turns remain durable,
+but prompt restoration is bounded. Raw tool results and historical Evidence
+are not restored; P1-006 response planning can reference only current-run
+canonical Evidence.
+
+The independent conversation schema version is stored in
+`conversation_schema_metadata`. Persistence failures are fail-closed and safe;
+failed runs retain the USER turn but create no ASSISTANT turn or checkpoint
+advance. See ADR-005.
+
+---
+
+# 14. Safety V0.1
 
 V0.1 capability mode:
 
@@ -525,7 +562,7 @@ Even if it incorrectly selects an execution path in a future extension, the tool
 
 ---
 
-# 14. Golden Cases
+# 15. Golden Cases
 
 The Agent Kernel is considered viable only when it reliably handles:
 
@@ -544,7 +581,7 @@ the registry for any supported input; unknown records are typed `not_found`.
 
 ---
 
-# 15. Evaluation dimensions
+# 16. Evaluation dimensions
 
 At minimum:
 
@@ -566,7 +603,7 @@ At minimum:
 
 ---
 
-# 16. Future architecture
+# 17. Future architecture
 
 Not part of V0.1:
 

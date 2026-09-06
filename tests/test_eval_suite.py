@@ -38,7 +38,7 @@ def test_backend_golden_suite_is_typed_versioned_and_deterministic() -> None:
     second = loader.load()
 
     assert first.suite_id == "opsmind-golden"
-    assert first.suite_version == "0.1"
+    assert first.suite_version == "0.2"
     assert [case.case_id for case in first.cases] == [
         "C01",
         "C03",
@@ -50,6 +50,13 @@ def test_backend_golden_suite_is_typed_versioned_and_deterministic() -> None:
         "C12",
     ]
     assert first.model_dump_json() == second.model_dump_json()
+
+    c12 = next(case for case in first.cases if case.case_id == "C12")
+    assert c12.known_gap is None
+    assert [turn.message for turn in c12.turns] == [
+        "WO20260001为什么一直没处理？",
+        "那现在是谁在处理？",
+    ]
 
 
 def test_backend_golden_suite_contains_pm_owned_c05_and_c06_truth() -> None:

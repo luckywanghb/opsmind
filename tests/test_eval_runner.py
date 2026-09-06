@@ -5,6 +5,10 @@ from pathlib import Path
 
 from opsmind.agent.schemas import ActionDecisionOutput, RequestUnderstandingOutput
 from opsmind.api.runtime import OpsAgentRuntime
+from opsmind.conversations import (
+    ConversationPersistenceService,
+    SQLiteConversationRepository,
+)
 from opsmind.evals import (
     EvalJobLifecycleStatus,
     EvalPersistenceService,
@@ -93,6 +97,9 @@ def _runner(
     execution = AgentExecutionService(
         runtime,
         RunPersistenceService(run_repository, app_version="test"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(tmp_path / "opsmind.db")
+        ),
     )
     eval_repository = SQLiteEvalRepository(tmp_path / "opsmind.db")
     persistence = EvalPersistenceService(
@@ -260,7 +267,9 @@ def test_runner_runtime_error_is_case_error_and_job_completes(tmp_path: Path) ->
     assert failed_run.error_code == "MODEL_STRUCTURED_OUTPUT_INVALID"
 
 
-def test_runner_multiturn_reuses_only_thread_id(tmp_path: Path) -> None:
+def test_runner_multiturn_reuses_thread_and_restores_bounded_context(
+    tmp_path: Path,
+) -> None:
     loader = _suite(
         tmp_path / "suite.json",
         turns=["first", "second"],
@@ -290,4 +299,8 @@ def test_runner_multiturn_reuses_only_thread_id(tmp_path: Path) -> None:
     assert len(job.case_runs) == 2
     assert job.case_runs[0].run_id != job.case_runs[1].run_id
     assert provider.history[2].messages[1].content.find("second") >= 0
-    assert "first" not in provider.history[2].messages[1].content
+    second_context = json.loads(provider.history[2].messages[1].content)
+    assert second_context["original_query"] == "first"
+    assert second_context["recent_turns"] == [
+        {"role": "USER", "content": "first"}
+    ]

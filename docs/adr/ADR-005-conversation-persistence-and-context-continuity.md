@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed for TASK-P1-010. PM Architecture Gate pending.
+Implemented for TASK-P1-010. PM Architecture Gate pending.
 
 ## Context
 
@@ -31,9 +31,10 @@ resolve/create thread
   → atomically persist assistant turn + updated safe checkpoint
 ```
 
-The detailed typed model, transaction, concurrency, context budgets, failure
-mapping, and Eval integration will be finalized after inspecting and testing
-the actual P1-009 main implementation.
+The default store has independent schema metadata version 1 and three domain
+tables: `conversation_threads`, `conversation_turns`, and
+`conversation_checkpoints`. Terminal assistant-turn and checkpoint mutation is
+one SQLite transaction.
 
 ## Conversation, run, and request boundary
 
@@ -53,9 +54,13 @@ SQL or own repository lifecycle.
 
 Each request builds a fresh Agent state from the current request plus a typed
 safe conversation projection. The projection combines a structured checkpoint
-with bounded recent turns. Node-specific context assembly decides which of
-those fields each model task receives; the entire stored transcript is never
-injected into every prompt.
+with the six most recent prior turns; each prompt-visible recent turn is capped
+at 2,000 characters. Checkpoint lists and scalar entity maps are capped at 20
+items, while the current and original query preserve the public 8,000-character
+input contract. Full turns remain durable. Node-specific context assembly
+gives the restored conversation fields to request understanding, while action
+decision receives restored task/fact state and tool result review remains
+current-run-only. Response-plan context is unchanged.
 
 No LLM summarizer is introduced: it would add cost, latency, hallucinated
 memory risk, structured-output failures, and a new behavior dependency where
@@ -70,10 +75,13 @@ through the existing P1-006 evidence pipeline in the current run.
 
 ## Concurrency
 
-The implementation will serialize same-thread mutation or reject detected
-revision conflicts safely. It will not accept silent last-write-wins updates.
-The final mechanism and its local SQLite limitations will be recorded here
-after implementation validation.
+The application service uses a keyed async lock to serialize normal same-thread
+requests within one process. SQLite `BEGIN IMMEDIATE`, an `active_run_id`
+ownership column, and optimistic `revision` predicates detect concurrent peer
+writers and reject them with `CONVERSATION_CONFLICT`; there is no silent
+last-write-wins. This is intentionally a single-instance/local design, not a
+distributed lock platform. A crashed process can leave an active claim that
+requires later operational recovery policy.
 
 ## Storage
 
@@ -87,7 +95,19 @@ schema contracts remain unchanged.
 Conversation persistence is fail-closed. A storage failure maps to a typed,
 sanitized service error and a safe HTTP response without SQL, database paths,
 tracebacks, or exception text. Failed Agent runs do not create fake assistant
-turns or advance the checkpoint with incomplete state.
+turns or advance the checkpoint with incomplete state. A USER turn is written
+before Agent execution and retained for a failed run. Run and conversation
+terminal commits remain separate domain transactions; this task does not add a
+cross-domain distributed transaction.
+
+## Evaluation and API
+
+The Chat API and Eval Runner continue to call the same
+`AgentExecutionService`; the composed service now owns conversation lifecycle.
+Eval does not concatenate history. Golden Suite `0.2` retains the eight cases
+and removes C12's conversation-persistence known gap. Read-only thread list and
+detail endpoints expose typed metadata, ordered turns, run/request relations,
+and safe checkpoint fields only.
 
 ## Consequences
 
@@ -95,4 +115,3 @@ The product gains auditable, bounded, same-thread cross-run continuity while
 retaining independent Agent runs and current-run evidence grounding. It does
 not gain long-term user memory, cross-thread preference memory, a chat-history
 UI, LangGraph approval resume, retrieval, or write capabilities.
-

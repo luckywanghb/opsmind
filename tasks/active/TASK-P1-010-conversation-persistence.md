@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN PROGRESS — DEVELOPMENT`
+`IMPLEMENTATION COMPLETE — INDEPENDENT TEST PENDING`
 
 ## Risk
 
@@ -13,7 +13,7 @@
 - Issue: `#24`
 - Branch: `task/TASK-P1-010-dev`
 - Base: `4d01d7c9995d86c91506e3d1f475050c113f75a3`
-- PR: `PENDING DRAFT CREATION`
+- PR: `#25` (`DRAFT`)
 - PM Architecture Gate: `PENDING`
 - Merge: `PROHIBITED`
 
@@ -68,3 +68,15 @@ continuation.
 - CI pass on the exact reviewed HEAD.
 - PM Architecture Gate remains pending; no merge before approval.
 
+## Developer validation snapshot
+
+- Backend: `608 passed`, `1 deselected` (credential-gated live test).
+- Ruff: PASS.
+- Mypy: PASS (`56` source files).
+- Lock: PASS.
+- Diff check: PASS.
+- Frontend: `41 passed`; lint PASS; production build PASS.
+- Browser: PASS — two real ChatPage turns used one thread, distinct request/run
+  IDs, restored `WO20260001`, classified `CONTINUE_CASE`, reacquired current-run
+  `work_order_query` evidence, and returned handler `U10108`.
+- Live DeepSeek: `LIVE_EVAL_NOT_RUN` (`DEEPSEEK_API_KEY` unavailable).

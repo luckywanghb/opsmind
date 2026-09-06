@@ -12,6 +12,10 @@ from fastapi.testclient import TestClient
 from opsmind.agent.graph import AgentToolCall
 from opsmind.api.app import create_app
 from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
+from opsmind.conversations import (
+    ConversationPersistenceService,
+    SQLiteConversationRepository,
+)
 from opsmind.evals import EvaluationObservationErrorCode
 from opsmind.execution import AgentExecutionService
 from opsmind.models import ModelGateway
@@ -86,6 +90,9 @@ async def test_long_valid_tool_argument_keeps_chat_run_successful_and_bounded_fo
     execution = AgentExecutionService(
         cast(OpsAgentRuntime, runtime),
         RunPersistenceService(repository, app_version="test"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(repository.path)
+        ),
     )
 
     result = await execution.execute(
