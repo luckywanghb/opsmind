@@ -151,3 +151,27 @@ def test_entity_ranking_has_total_order_for_case_variant_identifier_keys(
     )
 
     assert forward == reverse
+
+
+def test_long_entity_key_collision_has_order_independent_winner(
+    tmp_path: Path,
+) -> None:
+    """Two valid long keys with one bounded prefix need one stable winner."""
+
+    bounded_key = f"{'x' * 248}asset_id"
+    assert len(bounded_key) == 256
+    entries = {
+        f"{bounded_key}-B": "LEXICALLY-LATER",
+        f"{bounded_key}-A": "LEXICALLY-EARLIER",
+    }
+    forward = _checkpoint_entities(
+        tmp_path, thread_id="long-forward", current=entries
+    )
+    reverse = _checkpoint_entities(
+        tmp_path,
+        thread_id="long-reverse",
+        current=dict(reversed(list(entries.items()))),
+    )
+
+    assert forward == reverse
+    assert forward == {bounded_key: "LEXICALLY-EARLIER"}

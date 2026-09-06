@@ -2,7 +2,7 @@
 
 ## Status
 
-`REMEDIATED — INDEPENDENT RETEST PENDING`
+`INDEPENDENT TEST PASS — REVIEWER PENDING`
 
 ## Risk
 
@@ -96,4 +96,5 @@ continuation.
   tie-breaker.
 - Second remediation adds the exact original key as the final ranking
   tie-breaker and deterministically resolves bounded-prefix collisions.
-- All independent Tester evidence is retained; second retest is pending.
+- Second remediation independent verdict: `PASS`, `BLOCKER=0`, `MAJOR=0`,
+  `MINOR=0`, `NIT=0`; all prior FAIL reports remain retained.
