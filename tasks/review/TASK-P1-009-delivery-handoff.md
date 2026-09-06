@@ -1,16 +1,16 @@
 # TASK-P1-009 PM Handoff
 
-## Reporter PM View
+## Reporter PM View — Governance Closure
 
-- **Stage:** `PM_FINAL_GATE` (`PENDING`)
+- **Stage:** `READY_TO_MERGE` (`PM_FINAL_GATE: APPROVED`)
 - **Risk:** `MEDIUM`
 - **Branch:** `task/TASK-P1-009-dev`
 - **Base:** `3440130c741f311a436d76155a38e2d7a0fc7d74`
 - **Reviewed Product HEAD:** `522f62a722e97fc9344f8d1abd64d7276e843c76`
-- **Delivery Reporter HEAD:** `522f62a722e97fc9344f8d1abd64d7276e843c76` (report baseline; final governance commit is report-only)
+- **Verified delivery HEAD:** `3cee7a155ccc3ba845a2f8cb57a8ca4737337ce8`
 - **Issue:** [#22](https://github.com/luckywanghb/opsmind/issues/22)
-- **Draft PR:** [#23](https://github.com/luckywanghb/opsmind/pull/23) (`OPEN`, `DRAFT`)
-- **PM action:** `REVIEW_REQUIRED`
+- **PR:** [#23](https://github.com/luckywanghb/opsmind/pull/23) (`READY_TO_MERGE`)
+- **PM action:** `NONE`
 
 ### Outcome
 
@@ -19,7 +19,10 @@
   states, case/assertion detail, runtime identity, and ordered run IDs.
 - Independent Tester and Reviewer gates are satisfied. No backend, Agent,
   Golden Suite, API contract, or architecture change was introduced.
-- The task is stopped at the PM Final Gate; the Draft PR remains unmerged.
+- PM approved the Final Gate for merge. The authorized action is a governance-
+  only squash merge; no product remediation is authorized or required.
+- Phase 2 — Evaluation & Observability is complete after TASK-P1-008 and
+  TASK-P1-009 delivery. TASK-P1-010 has not started.
 
 ### Validation evidence
 
@@ -48,22 +51,34 @@ ADR is required.
   timezone-naive timestamps and duplicate case run IDs. Both explicitly state
   they do not block this task; B0/M0 gates remain satisfied.
 
-### PM action required
+### Accepted technical debt (no remediation)
 
-`REVIEW_REQUIRED` — PM must decide whether to approve the Draft PR for merge.
-Until then, merge remains prohibited and the PR must stay Draft.
+- **Duplicate case `run_ids`:** the frontend decoder accepts duplicate values
+  when matching duplicate turn relations are supplied; backend Pydantic rejects
+  duplicate case run IDs. This is defense-in-depth only and non-blocking.
+- **Timezone-naive timestamps:** the frontend decoder accepts ISO-like
+  timestamps without a timezone although backend Pydantic requires aware
+  timestamps. Valid persisted responses are timezone-aware; this is a
+  non-blocking strictness gap.
 
-## TASK-P1-009 PM HANDOFF
+### PM action
+
+`NONE` — PM recorded `APPROVED FOR MERGE`. Mark PR #23 ready, require exact
+final-head Python/Web CI PASS, squash merge with title
+`feat: connect evaluation UI to real eval runtime (#23)`, close Issue #22, and
+record the verified merge/main CI result. No Phase 3/P1-010 work is authorized.
+
+## TASK-P1-009 PM HANDOFF — PM APPROVED FOR MERGE
 
 Base: `3440130c741f311a436d76155a38e2d7a0fc7d74`
 
 Reviewed Product HEAD: `522f62a722e97fc9344f8d1abd64d7276e843c76`
 
-Delivery Reporter HEAD: `522f62a722e97fc9344f8d1abd64d7276e843c76` (report baseline; final governance commit is report-only)
+Delivery Reporter HEAD: `3cee7a155ccc3ba845a2f8cb57a8ca4737337ce8`
 
 Issue: [#22](https://github.com/luckywanghb/opsmind/issues/22)
 
-Draft PR: [#23](https://github.com/luckywanghb/opsmind/pull/23) (`OPEN`, `DRAFT`)
+Draft PR: [#23](https://github.com/luckywanghb/opsmind/pull/23) (`READY_TO_MERGE` before authorized squash merge)
 
 PR HEAD CI: `PASS` — Python 3.11 validation `PASS`; Web client validation
 `PASS` ([workflow run](https://github.com/luckywanghb/opsmind/actions/runs/34032779308))
@@ -112,26 +127,31 @@ Agent behavior changes: `NO`
 
 Golden Suite changes: `NO`
 
-PM Final Gate: `PENDING`
+PM Final Gate: `APPROVED FOR MERGE`
 
-Merge: `PROHIBITED`
+Merge: `AUTHORIZED` — squash title `feat: connect evaluation UI to real eval runtime (#23)`
+
+Phase 2 — Evaluation & Observability: `COMPLETE`
+
+TASK-P1-010: `NOT STARTED`
 
 ## Structured JSON Status Object
 
 ```json
 {
   "task_id": "TASK-P1-009",
-  "stage": "PM_FINAL_GATE",
+  "stage": "READY_TO_MERGE",
   "risk": "MEDIUM",
   "issue": 22,
   "pr": 23,
-  "commit_sha": "522f62a722e97fc9344f8d1abd64d7276e843c76",
+  "commit_sha": "3cee7a155ccc3ba845a2f8cb57a8ca4737337ce8",
   "reviewed_product_head": "522f62a722e97fc9344f8d1abd64d7276e843c76",
-  "delivery_reporter_head": "522f62a722e97fc9344f8d1abd64d7276e843c76",
+  "delivery_reporter_head": "3cee7a155ccc3ba845a2f8cb57a8ca4737337ce8",
   "outcome": [
     "Replaced the Evaluation demo fixture with the real persisted Eval APIs and truthful UI states.",
     "Added real history, explicit opsmind-golden runs, metrics, case/assertion detail, runtime identity, and ordered run IDs.",
-    "Tester and Reviewer gates are satisfied; task is stopped at the PM Final Gate."
+    "Tester and Reviewer gates are satisfied; PM approved the Final Gate for the authorized squash merge.",
+    "Phase 2 Evaluation & Observability is complete; TASK-P1-010 was not started."
   ],
   "validation": {
     "frontend_tests": {"status": "PASS", "passed": 41, "files": 4},
@@ -152,6 +172,10 @@ Merge: `PROHIBITED`
   },
   "architecture_impact": "NONE",
   "adr": "NOT_REQUIRED",
+  "accepted_technical_debt": [
+    "Frontend decoder accepts duplicate Case run_ids when matching duplicate turn relations are supplied; backend rejects them. Non-blocking defense-in-depth gap; no remediation authorized.",
+    "Frontend decoder accepts timezone-naive ISO-like timestamps although backend requires timezone-aware timestamps. Valid persisted responses are aware; non-blocking strictness gap; no remediation authorized."
+  ],
   "deviations": [
     "Browser evidence used the deterministic mock provider; no live DeepSeek quality claim is made.",
     "Tester and Reviewer each recorded two non-blocking MINOR decoder parity gaps: timezone-naive timestamps and duplicate case run IDs."
@@ -170,8 +194,11 @@ Merge: `PROHIBITED`
     "reviewer_nit": 0,
     "gate": "MET"
   },
-  "pm_action": "REVIEW_REQUIRED",
-  "pm_final_gate": "PENDING",
-  "merge": "PROHIBITED"
+  "pm_action": "NONE",
+  "pm_final_gate": "APPROVED_FOR_MERGE",
+  "merge": "AUTHORIZED",
+  "phase_2_evaluation_observability": "COMPLETE",
+  "task_status": "DONE",
+  "task_p1_010": "NOT_STARTED"
 }
 ```

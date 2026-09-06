@@ -2,7 +2,7 @@
 
 ## Status
 
-`PM_FINAL_GATE/PENDING`
+`DONE`
 
 ## Risk
 
@@ -15,12 +15,14 @@
 ## Control plane
 
 - Issue: `#22`
-- Draft PR: `#23` (`OPEN`, `DRAFT`)
+- PR: `#23` (`MERGED`, squash)
 - Branch: `task/TASK-P1-009-dev`
 - Base: `3440130c741f311a436d76155a38e2d7a0fc7d74`
 - Reviewed Product HEAD: `522f62a722e97fc9344f8d1abd64d7276e843c76`
-- PM Final Gate: `PENDING`
-- Merge: `PROHIBITED`
+- Delivery closure HEAD: `3cee7a155ccc3ba845a2f8cb57a8ca4737337ce8`
+- PM Final Gate: `APPROVED`
+- Phase 2 — Evaluation & Observability: `COMPLETE`
+- Merge: `APPROVED`
 
 ## Goal
 
@@ -90,7 +92,23 @@ cd web && npm test && npm run lint && npm run build
 Browser acceptance uses `OPSMIND_MODEL_PROVIDER=mock` and a temporary
 `OPSMIND_RUN_STORE_PATH`; it must not require DeepSeek credentials.
 
-## Gate
+## Final closure
 
-Stop at `PM FINAL GATE`. The Draft PR must remain unmerged until the PM gives
-explicit approval.
+- PM Final Gate: `APPROVED FOR MERGE`.
+- The authorized squash merge uses title
+  `feat: connect evaluation UI to real eval runtime (#23)`.
+- Tester: `PASS`, B0/M0, 2 accepted non-blocking MINORs, 0 NIT.
+- Reviewer: `APPROVE`, B0/M0, 2 accepted non-blocking MINORs, 0 NIT.
+- Architecture impact: `NO`; ADR: `NOT REQUIRED`.
+- Phase 2 — Evaluation & Observability: `COMPLETE` after TASK-P1-008 and
+  TASK-P1-009 delivery.
+- TASK-P1-010 was not started.
+
+### Accepted technical debt (no remediation in TASK-P1-009)
+
+- Frontend decoder accepts duplicate values in a Case `run_ids` array when
+  matching duplicate turn relations are supplied; backend Pydantic rejects
+  duplicate case run IDs. This is defense-in-depth only and is non-blocking.
+- Frontend timestamp decoder accepts timezone-naive ISO-like timestamps even
+  though the backend requires timezone-aware timestamps. Valid persisted API
+  data remains timezone-aware; this is a non-blocking strictness gap.
