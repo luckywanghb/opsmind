@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed for TASK-P1-007; PM architecture gate required before merge.
+Accepted for TASK-P1-007 by PM Architecture Gate on 2026-09-06.
+
+Approved implementation HEAD: `9a9abc060fa9e8e5580465746b83487f1999b3bd`.
 
 ## Context
 

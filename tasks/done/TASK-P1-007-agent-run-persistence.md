@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_PROGRESS`
+`DONE`
 
 ## Risk
 
@@ -10,7 +10,7 @@
 
 ## Owner role
 
-`Developer`
+`PM/Architect`
 
 ## Dependencies
 
@@ -61,5 +61,15 @@ uv lock --check
 cd web && npm test && npm run lint && npm run build
 ```
 
-Independent Tester, Sol Medium Reviewer, CI, and PM Architecture Gate occur in
-the later workflow stages. This branch must not be merged by the Developer.
+## Final gate
+
+- Product HEAD reviewed: `9a9abc060fa9e8e5580465746b83487f1999b3bd`
+- Independent Tester: `PASS` — BLOCKER 0 / MAJOR 0 / MINOR 0 / NIT 0
+- Sol Medium Reviewer: `APPROVE` — BLOCKER 0 / MAJOR 0 / MINOR 0 / NIT 0
+- GitHub Actions: Python and Web validation `PASS`
+- PM Architecture Gate: `APPROVED FOR MERGE` on 2026-09-06
+- ADR-003: `Accepted`
+
+The governance-only gate closeout introduces no product or test changes after
+the reviewed product HEAD. TASK-P1-008 is the recommended next task but is not
+started here.

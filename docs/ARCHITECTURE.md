@@ -1,6 +1,6 @@
 # OpsMind Architecture — V0.1
 
-Status: TASK-P1-007 proposal — PM architecture gate required
+Status: TASK-P1-007 architecture accepted — PM gate approved 2026-09-06
 Architecture style: Model-first Agent + deterministic harness  
 Primary Agent runtime: LangGraph  
 Business environment: Fully synthetic manufacturing IT environment
