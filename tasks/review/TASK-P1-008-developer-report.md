@@ -6,7 +6,7 @@
 - Role: `Developer`
 - Branch: `task/TASK-P1-008-dev`
 - Base SHA: `e0e0675d6c638401d91643aa546bb106b3188dca`
-- Implementation commit: pending final commit
+- Implementation commit: `0b01dda`
 - Stage: `TEST` → independent Tester / Reviewer
 - Architecture impact: `ARCHITECTURE_CHANGE`
 - PM Architecture Gate: `PENDING`
