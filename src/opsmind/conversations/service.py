@@ -12,6 +12,7 @@ from pydantic import JsonValue
 from opsmind.conversations.models import (
     MAX_CHECKPOINT_ITEMS,
     MAX_CHECKPOINT_TEXT_LENGTH,
+    MAX_CONVERSATION_IDENTITY_LENGTH,
     MAX_IMPORTANT_ENTITIES,
     ConversationCheckpoint,
     ConversationLease,
@@ -20,6 +21,7 @@ from opsmind.conversations.models import (
     ConversationThreadDetail,
 )
 from opsmind.conversations.repository import (
+    ConversationDataIntegrityError,
     ConversationIdentityConflictError,
     ConversationNotFoundError,
     ConversationRepository,
@@ -37,6 +39,16 @@ from opsmind.state import (
 )
 
 RECENT_TURN_LIMIT = 6
+
+
+def _identity_value(value: str | None, *, field: str) -> str | None:
+    if value is None:
+        return None
+    if not value or len(value) > MAX_CONVERSATION_IDENTITY_LENGTH:
+        raise ConversationDataIntegrityError(
+            f"conversation {field} is outside the durable identity contract"
+        )
+    return value
 
 
 def _bounded(
@@ -98,7 +110,9 @@ def _important_entities(
     ):
         current.setdefault(bounded_key, value)
     if state.identity.site_id is not None:
-        site_id = state.identity.site_id.strip()[:512]
+        site_id = (
+            _identity_value(state.identity.site_id, field="site identity") or ""
+        ).strip()
         if site_id:
             # Explicit allowlisted identity is authoritative over a model-
             # inferred entity with the same key.
@@ -188,10 +202,12 @@ class ConversationPersistenceService:
         *,
         thread_id: str,
         user_id: str | None,
+        site_id: str | None = None,
         message: str,
         request_id: str,
         run_id: str,
     ) -> ConversationLease:
+        _identity_value(site_id, field="site identity")
         return self._repository.begin_run(
             thread_id=thread_id,
             user_id=user_id,
@@ -213,8 +229,9 @@ class ConversationPersistenceService:
         checkpoint = lease.context.checkpoint
         thread = lease.context.thread
         explicit_site_id = source_context.get("site_id")
-        current_site_id = (
-            explicit_site_id if isinstance(explicit_site_id, str) else None
+        current_site_id = _identity_value(
+            explicit_site_id if isinstance(explicit_site_id, str) else None,
+            field="site identity",
         )
         stored_site_id = checkpoint.site_id if checkpoint is not None else None
         if (
@@ -320,7 +337,10 @@ class ConversationPersistenceService:
             revision=lease.revision + 1,
             original_query=lease.context.thread.original_query,
             previous_resolution_status=resolution,
-            site_id=_bounded(canonical.identity.site_id, 512),
+            site_id=_identity_value(
+                canonical.identity.site_id,
+                field="site identity",
+            ),
             task_objective=_bounded(canonical.task.objective),
             task_constraints=_bounded_items(canonical.task.constraints),
             confirmed_facts=_bounded_items(canonical.facts.confirmed),

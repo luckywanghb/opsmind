@@ -339,6 +339,27 @@ def test_different_explicit_user_cannot_load_thread_context(tmp_path: Path) -> N
     assert provider.invocation_count == 2
 
 
+def test_oversized_site_identity_fails_without_lossy_persistence(
+    tmp_path: Path,
+) -> None:
+    client, provider = _client(tmp_path, [])
+
+    response = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "initial",
+            "thread_id": "oversized-site",
+            "source_context": {"user_id": "U1", "site_id": "S" * 513},
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "CONVERSATION_PERSISTENCE_UNAVAILABLE"
+    assert provider.invocation_count == 0
+    assert client.get("/api/v1/runs").json()[0]["lifecycle_status"] == "FAILED"
+    assert client.get("/api/v1/threads").json() == []
+
+
 class _TerminalFailureRepository(SQLiteConversationRepository):
     def complete_run(
         self,

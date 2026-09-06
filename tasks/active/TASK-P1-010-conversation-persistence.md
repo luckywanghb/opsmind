@@ -108,3 +108,11 @@ continuation.
   corrects the API limitations text, and declares the Chat 409 response in
   OpenAPI.
 - Reviewer adversarial reproductions pass; independent re-review is pending.
+- First Reviewer recheck on `f6b39db`: `REQUEST_CHANGES`, `BLOCKER=0`,
+  `MAJOR=1`, `MINOR=0`, `NIT=0`; all previous findings were closed, but an
+  oversized `site_id` exposed lossy equality after silent truncation.
+- Second Reviewer remediation rejects out-of-contract site identities through
+  a typed safe failure before any conversation write and never truncates
+  identity equality values. The exact 512-character boundary remains durable.
+- Reviewer updated its independent attack to cover both boundaries; final
+  independent re-review remains pending.

@@ -151,7 +151,9 @@ If a thread is bound to a `user_id`, a later request with a different explicit
 `user_id` fails closed with `409 CONVERSATION_IDENTITY_CONFLICT`. A same-thread
 checkpoint also retains an explicit safe `site_id`; a later different explicit
 `site_id` fails with the same identity-conflict code, while omission restores
-the stored site scope. Arbitrary prior source-context fields are not restored.
+the stored site scope. Identity values are limited to 512 characters; an
+out-of-contract value fails safely and is never truncated. Arbitrary prior
+source-context fields are not restored.
 A same-thread
 concurrent mutation is serialized in-process and protected by repository
 ownership/revision checks; a detected peer conflict returns

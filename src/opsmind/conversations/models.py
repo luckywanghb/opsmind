@@ -11,6 +11,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from opsmind.state import ResolutionStatus, StateModel
 
 MAX_CONVERSATION_ID_LENGTH = 128
+MAX_CONVERSATION_IDENTITY_LENGTH = 512
 MAX_CONVERSATION_CONTENT_LENGTH = 8_000
 MAX_CHECKPOINT_TEXT_LENGTH = 2_000
 MAX_CHECKPOINT_ITEMS = 20
@@ -53,7 +54,9 @@ class ConversationThread(ConversationModel):
     latest_run_id: str = Field(min_length=1, max_length=MAX_CONVERSATION_ID_LENGTH)
     turn_count: int = Field(ge=0, strict=True)
     revision: int = Field(ge=0, strict=True)
-    user_id: str | None = Field(default=None, max_length=512)
+    user_id: str | None = Field(
+        default=None, max_length=MAX_CONVERSATION_IDENTITY_LENGTH
+    )
     active_run_id: str | None = Field(
         default=None, max_length=MAX_CONVERSATION_ID_LENGTH
     )
@@ -94,7 +97,9 @@ class ConversationCheckpoint(ConversationModel):
         min_length=1, max_length=MAX_CONVERSATION_CONTENT_LENGTH
     )
     previous_resolution_status: ResolutionStatus
-    site_id: str | None = Field(default=None, max_length=512)
+    site_id: str | None = Field(
+        default=None, max_length=MAX_CONVERSATION_IDENTITY_LENGTH
+    )
     task_objective: str | None = Field(
         default=None, max_length=MAX_CHECKPOINT_TEXT_LENGTH
     )

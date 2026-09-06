@@ -349,9 +349,11 @@ class AgentExecutionService:
         lease: ConversationLease
         try:
             raw_user_id = source_context.get("user_id")
+            raw_site_id = source_context.get("site_id")
             lease = conversation.begin(
                 thread_id=thread_id,
                 user_id=raw_user_id if isinstance(raw_user_id, str) else None,
+                site_id=raw_site_id if isinstance(raw_site_id, str) else None,
                 message=message,
                 request_id=request_id,
                 run_id=active.run_id,
