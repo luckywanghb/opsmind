@@ -2,7 +2,7 @@
 
 ## Status
 
-`REVIEWER REMEDIATED — RE-REVIEW PENDING`
+`READY FOR PM ARCHITECTURE GATE — MERGE PROHIBITED`
 
 ## Risk
 
@@ -115,4 +115,8 @@ continuation.
   a typed safe failure before any conversation write and never truncates
   identity equality values. The exact 512-character boundary remains durable.
 - Reviewer updated its independent attack to cover both boundaries; final
-  independent re-review remains pending.
+  independent re-review passed.
+- Final Sol Medium Reviewer: `APPROVE`, `BLOCKER=0`, `MAJOR=0`, `MINOR=0`,
+  `NIT=0`, Reviewed HEAD `362468d81de9895632e351acea20a782c9476901`.
+- Exact Reviewed-HEAD Python and Web CI: PASS.
+- PM Architecture Gate: `PENDING`; PR remains Draft and unmerged.
