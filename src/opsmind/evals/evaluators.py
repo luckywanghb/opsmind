@@ -64,10 +64,26 @@ def _safe(value: Any, *, depth: int = 0) -> Any:
     return str(value)[:256]
 
 
-def _json_values_equal(actual: object, expected: object) -> bool:
-    """Compare JSON values without Python's bool/int equality trap."""
+def _json_kind(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return type(value).__name__
 
-    if type(actual) is not type(expected):
+
+def _json_values_equal(actual: object, expected: object) -> bool:
+    """Compare JSON values with strict JSON types and recursive equality."""
+
+    if _json_kind(actual) != _json_kind(expected):
         return False
     if isinstance(actual, dict):
         if not isinstance(expected, dict) or actual.keys() != expected.keys():
@@ -731,12 +747,17 @@ class EvaluatorRegistry:
         try:
             for observation in context.observations:
                 _ = observation.canonical_terminal_status
+                if observation.observation_error_code is not None:
+                    return _error(
+                        assertion,
+                        "evaluation observation is unavailable",
+                    )
             result = evaluator(assertion, context)
+            return EvalAssertionResult.model_validate(result)
         except Exception:
             # Evaluator failures are safe assertion errors.  Never stringify
             # malformed observations or exception details into the result.
             return _error(assertion, "evaluator could not inspect observation")
-        return EvalAssertionResult.model_validate(result)
 
 
 __all__ = ["CaseEvaluationContext", "EvaluatorRegistry", "EvaluatorFunction"]

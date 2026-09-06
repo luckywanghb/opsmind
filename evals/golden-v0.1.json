@@ -41,6 +41,8 @@
         {"assertion_id": "tool", "type": "required_tool_used", "expected": ["work_order_query"], "blocking": true},
         {"assertion_id": "argument", "type": "tool_argument_equals", "expected": {"tool": "work_order_query", "field": "work_order_id", "value": "WO20260001"}, "blocking": true},
         {"assertion_id": "status", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "status", "value": "APPROVING"}, "blocking": true},
+        {"assertion_id": "handler", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "current_handler", "value": "U10108"}, "blocking": true},
+        {"assertion_id": "waiting", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "waiting_hours", "value": 4}, "blocking": true},
         {"assertion_id": "node", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "current_node", "value": "设备主管审批"}, "blocking": true},
         {"assertion_id": "abnormal", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "abnormal", "value": false}, "blocking": true}
       ]
@@ -52,6 +54,7 @@
       "source_context": {"channel": "eval"},
       "assertions": [
         {"assertion_id": "intent", "type": "intent_in", "expected": ["WORKFLOW_ISSUE"], "blocking": true},
+        {"assertion_id": "request", "type": "request_type_in", "expected": ["DIAGNOSE"], "blocking": true},
         {"assertion_id": "action", "type": "final_action_in", "expected": ["ASK_USER"], "blocking": true},
         {"assertion_id": "terminal", "type": "terminal_status_in", "expected": ["WAITING_USER"], "blocking": true},
         {"assertion_id": "no_search", "type": "tool_call_count_lte", "expected": 0, "blocking": true},

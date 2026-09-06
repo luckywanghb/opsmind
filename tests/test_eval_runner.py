@@ -10,6 +10,7 @@ from opsmind.evals import (
     EvalPersistenceService,
     EvalRunner,
     EvalSuiteLoader,
+    EvaluatorRegistry,
     SQLiteEvalRepository,
 )
 from opsmind.execution import AgentExecutionService
@@ -51,7 +52,11 @@ def _gateway(responses: list[object]) -> tuple[OpsAgentRuntime, MockModelProvide
 
 
 def _suite(
-    path: Path, *, turns: list[str], assertions: list[dict[str, object]]
+    path: Path,
+    *,
+    turns: list[str],
+    assertions: list[dict[str, object]],
+    evaluator_registry: EvaluatorRegistry | None = None,
 ) -> EvalSuiteLoader:
     path.write_text(
         json.dumps(
@@ -73,13 +78,15 @@ def _suite(
         ),
         encoding="utf-8",
     )
-    return EvalSuiteLoader(path)
+    return EvalSuiteLoader(path, evaluator_registry=evaluator_registry)
 
 
 def _runner(
     tmp_path: Path,
     responses: list[object],
     loader: EvalSuiteLoader,
+    *,
+    evaluators: EvaluatorRegistry | None = None,
 ) -> tuple[EvalRunner, MockModelProvider, SQLiteRunRepository]:
     runtime, provider = _gateway(responses)
     run_repository = SQLiteRunRepository(tmp_path / "opsmind.db")
@@ -98,6 +105,7 @@ def _runner(
             loader=loader,
             execution_service=execution,
             persistence=persistence,
+            evaluators=evaluators,
         ),
         provider,
         run_repository,
@@ -176,6 +184,50 @@ def test_runner_quality_fail_does_not_fail_job(tmp_path: Path) -> None:
     assert job.failed_count == 1
     assert job.error_count == 0
     assert job.case_results[0].status.value == "FAIL"
+
+
+def test_invalid_registered_evaluator_result_is_case_error_and_job_completes(
+    tmp_path: Path,
+) -> None:
+    def invalid_evaluator(assertion: object, context: object) -> object:
+        return {"invalid": "result"}
+
+    registry = EvaluatorRegistry({"invalid": invalid_evaluator})  # type: ignore[arg-type]
+    loader = _suite(
+        tmp_path / "suite.json",
+        turns=["done"],
+        assertions=[
+            {
+                "assertion_id": "invalid-result",
+                "type": "invalid",
+                "expected": True,
+            }
+        ],
+        evaluator_registry=registry,
+    )
+    runner, _, _ = _runner(
+        tmp_path,
+        [
+            _understanding(),
+            ActionDecisionOutput(
+                action=AgentAction.END_CONVERSATION,
+                goal="close",
+                rationale="done",
+            ),
+        ],
+        loader,
+        evaluators=registry,
+    )
+
+    job = __import__("asyncio").run(runner.run_suite("test-suite"))
+
+    assert job.lifecycle_status is EvalJobLifecycleStatus.COMPLETED
+    assert job.passed_count == 0
+    assert job.failed_count == 0
+    assert job.error_count == 1
+    assert job.case_results[0].status.value == "ERROR"
+    assert job.case_results[0].error_code == "EVAL_ASSERTION_ERROR"
+    assert job.case_results[0].assertions[0].status.value == "ERROR"
 
 
 def test_runner_runtime_error_is_case_error_and_job_completes(tmp_path: Path) -> None:

@@ -126,6 +126,13 @@ class EvalAssertionStatus(StrEnum):
     ERROR = "ERROR"
 
 
+class EvaluationObservationErrorCode(StrEnum):
+    """Typed reason why part of a successful run is unavailable to evals."""
+
+    TOOL_ARGUMENTS_UNAVAILABLE = "TOOL_ARGUMENTS_UNAVAILABLE"
+    PROJECTION_UNAVAILABLE = "PROJECTION_UNAVAILABLE"
+
+
 class EvalTurn(EvalModelMixin):
     """One user turn in a Golden Case."""
 
@@ -175,6 +182,7 @@ class EvaluationObservation(EvalModelMixin):
     loop: LoopState
     evidence: list[EvidenceItem] = Field(default_factory=list, max_length=50)
     handoff: HandoffState
+    observation_error_code: EvaluationObservationErrorCode | None = None
     terminal_status: TaskStatus | str = Field(min_length=1, max_length=64)
     reply_nonempty: bool
     loop_converged: bool
@@ -471,4 +479,5 @@ __all__ = [
     "EvalJobSummary",
     "EvalSuite",
     "EvalTurn",
+    "EvaluationObservationErrorCode",
 ]
