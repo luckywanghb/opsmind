@@ -20,6 +20,7 @@ from opsmind.evals.models import (
     EvalSuite,
     EvalTurn,
     EvaluationObservation,
+    EvaluationObservationErrorCode,
     ToolCallObservation,
 )
 from opsmind.evals.persistence import ActiveEvalJob, EvalPersistenceService
@@ -62,6 +63,7 @@ __all__ = [
     "EvalSuiteLoader",
     "EvalTurn",
     "EvaluationObservation",
+    "EvaluationObservationErrorCode",
     "EvaluatorRegistry",
     "IncompatibleEvalSchemaError",
     "SQLiteEvalRepository",

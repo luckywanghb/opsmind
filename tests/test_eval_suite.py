@@ -52,6 +52,29 @@ def test_backend_golden_suite_is_typed_versioned_and_deterministic() -> None:
     assert first.model_dump_json() == second.model_dump_json()
 
 
+def test_backend_golden_suite_contains_pm_owned_c05_and_c06_truth() -> None:
+    suite = EvalSuiteLoader().load()
+    cases = {case.case_id: case for case in suite.cases}
+
+    c05 = {assertion.assertion_id: assertion for assertion in cases["C05"].assertions}
+    assert c05["handler"].blocking is True
+    assert c05["handler"].expected == {
+        "source": "work_order_query",
+        "field": "current_handler",
+        "value": "U10108",
+    }
+    assert c05["waiting"].blocking is True
+    assert c05["waiting"].expected == {
+        "source": "work_order_query",
+        "field": "waiting_hours",
+        "value": 4,
+    }
+
+    c06 = {assertion.assertion_id: assertion for assertion in cases["C06"].assertions}
+    assert c06["request"].blocking is True
+    assert c06["request"].expected == ["DIAGNOSE"]
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

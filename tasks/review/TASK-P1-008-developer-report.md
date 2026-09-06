@@ -124,3 +124,33 @@ Details are recorded in
 `tasks/review/TASK-P1-008-developer-remediation-report.md`. The original Tester
 report remains unchanged and the branch remains unpushed and unmerged pending
 independent retest and the PM Architecture Gate.
+
+## Post-Reviewer remediation addendum
+
+The independent Reviewer report identified four MAJOR findings. They were
+remediated on this Developer branch while preserving the frozen Prompt, Graph,
+tool contracts, Evidence semantics, grounded rendering, `READ_ONLY` policy,
+Run schema v1, and public Chat contracts.
+
+- `opsmind.execution` now remains directly importable in a fresh process even
+  when the eval package initializer is involved; the runner's exception import
+  is resolved only after the package graph is initialized.
+- Eval-only tool-call projection is fail-closed and bounded. Oversized but
+  contract-valid tool arguments become a typed unavailable observation with no
+  raw argument retained; Chat and its durable AgentRun still complete
+  successfully.
+- Evaluator result model validation is inside the fail-closed assertion
+  boundary. Registered evaluator exceptions and invalid return models produce
+  assertion/Case `ERROR`, while the eval Job remains `COMPLETED`. Every default
+  evaluator now has a PASS/FAIL/invalid-observation matrix.
+- The still-unreleased `golden-v0.1` suite remains version `0.1` and now has
+  blocking C06 `request_type=DIAGNOSE` plus C05 `current_handler=U10108` and
+  `waiting_hours=4` structured evidence assertions. Wrong-value tests cover
+  each added truth assertion.
+
+The detailed record is
+`tasks/review/TASK-P1-008-reviewer-remediation-report.md`. Final local
+verification for this remediation was 582 passed and 1 deselected in the full
+pytest run, with Ruff, Mypy, and `git diff --check` passing. The branch remains
+unpushed and unmerged pending independent Reviewer re-entry and the PM
+Architecture Gate.

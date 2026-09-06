@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from time import perf_counter
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from opsmind.evals.evaluators import CaseEvaluationContext, EvaluatorRegistry
@@ -17,7 +18,9 @@ from opsmind.evals.models import (
 )
 from opsmind.evals.persistence import ActiveEvalJob, EvalPersistenceService
 from opsmind.evals.repository import EvalPersistenceError
-from opsmind.execution import AgentExecutionError, AgentExecutionService
+
+if TYPE_CHECKING:
+    from opsmind.execution import AgentExecutionService
 
 
 class EvalRunnerError(RuntimeError):
@@ -98,6 +101,12 @@ class EvalRunner:
         active: ActiveEvalJob,
         case: EvalCase,
     ) -> EvalCaseResult:
+        # Import only after the package graph is fully initialized.  Keeping
+        # this exception import out of module scope lets
+        # ``from opsmind.execution import AgentExecutionService`` work without
+        # depending on whether ``opsmind.evals`` was imported first.
+        from opsmind.execution import AgentExecutionError
+
         started_at = datetime.now(UTC)
         monotonic_started = perf_counter()
         observations: list[EvaluationObservation] = []
