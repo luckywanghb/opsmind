@@ -1,6 +1,6 @@
 import type { AgentAction } from "../../types/api";
 
-export function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "success" | "planned" | "warning" | "neutral" }) {
+export function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "success" | "planned" | "warning" | "danger" | "neutral" }) {
   return <span className={`badge badge--${tone}`}>{children}</span>;
 }
 

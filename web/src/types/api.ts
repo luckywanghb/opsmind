@@ -106,3 +106,67 @@ export interface ApiErrorEnvelope {
     run_id?: string;
   };
 }
+
+export type EvalJobLifecycleStatus = "STARTED" | "COMPLETED" | "FAILED";
+export type EvalCaseStatus = "PASS" | "FAIL" | "ERROR";
+export type EvalAssertionStatus = "PASS" | "FAIL" | "ERROR";
+
+export type EvalSafeValue = string | number | boolean | null | EvalSafeValue[] | { [key: string]: EvalSafeValue };
+
+export interface EvalRunRequest {
+  suite_id: string;
+}
+
+export interface EvalAssertionResult {
+  assertion_id: string;
+  type: string;
+  blocking: boolean;
+  status: EvalAssertionStatus;
+  expected_safe: EvalSafeValue;
+  actual_safe: EvalSafeValue;
+  message: string;
+}
+
+export interface EvalCaseResult {
+  eval_job_id: string;
+  case_id: string;
+  title: string;
+  status: EvalCaseStatus;
+  known_gap: string | null;
+  run_ids: string[];
+  assertions: EvalAssertionResult[];
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  error_code: string | null;
+}
+
+export interface EvalCaseRun {
+  eval_job_id: string;
+  case_id: string;
+  turn_index: number;
+  run_id: string;
+}
+
+export interface EvalJobSummary {
+  eval_job_id: string;
+  suite_id: string;
+  suite_version: string;
+  lifecycle_status: EvalJobLifecycleStatus;
+  case_count: number;
+  passed_count: number;
+  failed_count: number;
+  error_count: number;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  app_version: string;
+  build_sha: string | null;
+  runtime_identity: string;
+  error_code: string | null;
+}
+
+export interface EvalJob extends EvalJobSummary {
+  case_results: EvalCaseResult[];
+  case_runs: EvalCaseRun[];
+}
