@@ -65,7 +65,22 @@ class EvalRunner:
             for case in suite.cases:
                 results.append(await self._run_case(active, case))
             return self._persistence.complete(active, case_results=results)
-        except EvalPersistenceError:
+        except EvalPersistenceError as completion_error:
+            # A completed-job commit can fail after the durable STARTED row
+            # exists.  Make one safe terminal transition attempt so a
+            # catchable outage cannot leave the eval job falsely in progress.
+            try:
+                self._persistence.fail(
+                    active,
+                    error_code="EVAL_PERSISTENCE_FAILED",
+                )
+            except Exception:
+                # Keep the original completion failure as the cause while
+                # preventing fallback/provider text from crossing the safe
+                # runner boundary when both persistence paths are down.
+                raise EvalPersistenceError(
+                    "eval job completion persistence failed"
+                ) from completion_error
             raise
         except Exception as exc:
             # This is an infrastructure failure, not a product-quality FAIL.

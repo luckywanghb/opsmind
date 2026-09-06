@@ -23,6 +23,7 @@ from opsmind.state import (
     FiniteJsonObject,
     HandoffState,
     LoopState,
+    TaskStatus,
     UnderstandingState,
 )
 
@@ -32,27 +33,73 @@ MAX_CASE_NOTES_LENGTH = 2_000
 MAX_ASSERTION_MESSAGE_LENGTH = 512
 MAX_SAFE_ASSERTION_VALUE_LENGTH = 512
 MAX_SAFE_ASSERTION_VALUE_ITEMS = 32
+MAX_EVAL_JSON_NESTING_DEPTH = 32
 
 
 def _finite_json(value: object, path: str = "$") -> None:
-    """Reject non-finite numbers and unbounded nested JSON in eval inputs."""
+    """Reject non-finite, oversized, or deeply nested eval JSON values.
 
-    if isinstance(value, float) and not math.isfinite(value):
-        raise ValueError(f"non-finite JSON value at {path}")
-    if isinstance(value, str) and len(value) > MAX_SAFE_ASSERTION_VALUE_LENGTH:
-        raise ValueError(f"JSON string at {path} is too long")
-    if isinstance(value, list):
-        if len(value) > MAX_SAFE_ASSERTION_VALUE_ITEMS:
-            raise ValueError(f"JSON list at {path} is too large")
-        for index, item in enumerate(value):
-            _finite_json(item, f"{path}[{index}]")
-    elif isinstance(value, dict):
-        if len(value) > MAX_SAFE_ASSERTION_VALUE_ITEMS:
-            raise ValueError(f"JSON object at {path} is too large")
-        for key, item in value.items():
-            if len(key) > MAX_SAFE_ASSERTION_VALUE_LENGTH:
-                raise ValueError(f"JSON key at {path} is too long")
-            _finite_json(item, f"{path}.{key}")
+    This intentionally uses an explicit work list.  Suite content is
+    attacker-controlled at the loader boundary, so recursive validation must
+    not be able to turn malformed input into a raw ``RecursionError``.
+    """
+
+    pending: list[tuple[object, str, int]] = [(value, path, 0)]
+    while pending:
+        current, current_path, depth = pending.pop()
+        if depth > MAX_EVAL_JSON_NESTING_DEPTH:
+            raise ValueError(
+                f"JSON value at {current_path} is nested too deeply"
+            )
+        if isinstance(current, float) and not math.isfinite(current):
+            raise ValueError(f"non-finite JSON value at {current_path}")
+        if isinstance(current, str):
+            if len(current) > MAX_SAFE_ASSERTION_VALUE_LENGTH:
+                raise ValueError(f"JSON string at {current_path} is too long")
+            continue
+        if isinstance(current, list):
+            if len(current) > MAX_SAFE_ASSERTION_VALUE_ITEMS:
+                raise ValueError(f"JSON list at {current_path} is too large")
+            pending.extend(
+                (item, f"{current_path}[{index}]", depth + 1)
+                for index, item in reversed(list(enumerate(current)))
+            )
+            continue
+        if isinstance(current, dict):
+            if len(current) > MAX_SAFE_ASSERTION_VALUE_ITEMS:
+                raise ValueError(f"JSON object at {current_path} is too large")
+            children: list[tuple[object, str, int]] = []
+            for key, item in reversed(list(current.items())):
+                if not isinstance(key, str):
+                    raise ValueError(f"JSON key at {current_path} is not text")
+                if len(key) > MAX_SAFE_ASSERTION_VALUE_LENGTH:
+                    raise ValueError(f"JSON key at {current_path} is too long")
+                children.append((item, f"{current_path}.{key}", depth + 1))
+            pending.extend(children)
+
+
+def _validate_json_depth(value: object, path: str = "$") -> None:
+    """Check suite-wide JSON depth without applying field-specific limits."""
+
+    pending: list[tuple[object, str, int]] = [(value, path, 0)]
+    while pending:
+        current, current_path, depth = pending.pop()
+        if depth > MAX_EVAL_JSON_NESTING_DEPTH:
+            raise ValueError(
+                f"JSON value at {current_path} is nested too deeply"
+            )
+        if isinstance(current, float) and not math.isfinite(current):
+            raise ValueError(f"non-finite JSON value at {current_path}")
+        if isinstance(current, list):
+            pending.extend(
+                (item, f"{current_path}[{index}]", depth + 1)
+                for index, item in reversed(list(enumerate(current)))
+            )
+        elif isinstance(current, dict):
+            for key, item in reversed(list(current.items())):
+                if not isinstance(key, str):
+                    raise ValueError(f"JSON key at {current_path} is not text")
+                pending.append((item, f"{current_path}.{key}", depth + 1))
 
 
 class EvalModelMixin(BaseModel):
@@ -128,9 +175,22 @@ class EvaluationObservation(EvalModelMixin):
     loop: LoopState
     evidence: list[EvidenceItem] = Field(default_factory=list, max_length=50)
     handoff: HandoffState
-    terminal_status: str = Field(min_length=1, max_length=64)
+    terminal_status: TaskStatus | str = Field(min_length=1, max_length=64)
     reply_nonempty: bool
     loop_converged: bool
+
+    @field_validator("terminal_status", mode="before")
+    @classmethod
+    def normalize_terminal_status(cls, value: object) -> TaskStatus | str:
+        if not isinstance(value, str):
+            raise ValueError("terminal status must be text")
+        try:
+            return TaskStatus(value)
+        except ValueError:
+            # Preserve malformed observations as bounded text so the
+            # evaluator boundary can report a safe ERROR rather than allowing
+            # the fabricated value to match an assertion.
+            return value
 
     @model_validator(mode="after")
     def validate_safe_payload(self) -> Self:
@@ -139,6 +199,14 @@ class EvaluationObservation(EvalModelMixin):
         if len(self.model_dump_json().encode("utf-8")) > 128 * 1_024:
             raise ValueError("evaluation observation is too large")
         return self
+
+    @property
+    def canonical_terminal_status(self) -> TaskStatus:
+        """Return the canonical task status or fail for corrupt observations."""
+
+        if isinstance(self.terminal_status, TaskStatus):
+            return self.terminal_status
+        return TaskStatus(self.terminal_status)
 
 
 class EvalAssertion(EvalModelMixin):

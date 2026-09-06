@@ -98,7 +98,9 @@ class EvalPersistenceService:
                 raise EvalPersistenceError("eval case references a different job")
             for run_id in item.run_ids:
                 if self._run_repository is None:
-                    continue
+                    raise EvalPersistenceError(
+                        "Agent run reference verifier is unavailable"
+                    )
                 try:
                     run = self._run_repository.get(run_id)
                 except Exception as exc:

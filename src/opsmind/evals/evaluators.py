@@ -13,6 +13,13 @@ from opsmind.evals.models import (
     EvalAssertionStatus,
     EvaluationObservation,
 )
+from opsmind.state import (
+    AgentAction,
+    PrimaryIntent,
+    RequestType,
+    RiskSignal,
+    TaskStatus,
+)
 
 EvaluatorFunction = Callable[
     [EvalAssertion, "CaseEvaluationContext"], EvalAssertionResult
@@ -55,6 +62,27 @@ def _safe(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_safe(item, depth=depth + 1) for item in list(value)[:32]]
     return str(value)[:256]
+
+
+def _json_values_equal(actual: object, expected: object) -> bool:
+    """Compare JSON values without Python's bool/int equality trap."""
+
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(actual, dict):
+        if not isinstance(expected, dict) or actual.keys() != expected.keys():
+            return False
+        return all(
+            _json_values_equal(actual[key], expected[key]) for key in actual
+        )
+    if isinstance(actual, list):
+        if not isinstance(expected, list) or len(actual) != len(expected):
+            return False
+        return all(
+            _json_values_equal(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected, strict=True)
+        )
+    return actual == expected
 
 
 def _error(assertion: EvalAssertion, message: str) -> EvalAssertionResult:
@@ -219,10 +247,31 @@ def _terminal_status_in(
     assertion: EvalAssertion,
     context: CaseEvaluationContext,
 ) -> EvalAssertionResult:
-    return _enum_in(
+    expected = assertion.expected
+    targets = _targets(assertion, context)
+    if (
+        not isinstance(expected, list)
+        or not expected
+        or not all(isinstance(item, str) for item in expected)
+        or not targets
+    ):
+        return _error(assertion, "task status expectation is required")
+    expected_strings = [item for item in expected if isinstance(item, str)]
+    try:
+        expected_statuses = [TaskStatus(item).value for item in expected_strings]
+        actual = [item.canonical_terminal_status.value for item in targets]
+    except (TypeError, ValueError):
+        return _error(assertion, "observation terminal status is invalid")
+    passed = all(value in expected_statuses for value in actual) and bool(actual)
+    return _result(
         assertion,
-        context,
-        (item.terminal_status for item in _targets(assertion, context)),
+        passed,
+        actual=actual[-1] if len(actual) == 1 else actual,
+        message=(
+            "value is within the expected set"
+            if passed
+            else "value is outside the expected set"
+        ),
     )
 
 
@@ -295,7 +344,7 @@ def _tool_argument_equals(
     if (
         not isinstance(tool_value, str)
         or not isinstance(field_value, str)
-        or value is None
+        or "value" not in expected
     ):
         return _error(assertion, "tool, field, and value are required")
     tool = tool_value
@@ -313,7 +362,7 @@ def _tool_argument_equals(
         for call in item.tool_calls
         if call.tool_name == tool and field in call.arguments
     ]
-    passed = any(actual == value for actual in actual_values)
+    passed = any(_json_values_equal(actual, value) for actual in actual_values)
     return _result(
         assertion,
         passed,
@@ -399,7 +448,7 @@ def _evidence_field(
     field = expected.get("field")
     expected_value = expected.get("value")
     source = expected.get("source")
-    if not isinstance(field, str) or expected_value is None:
+    if not isinstance(field, str) or "value" not in expected:
         return _error(assertion, "field and value are required")
     if source is not None and not isinstance(source, str):
         return _error(assertion, "source must be a string")
@@ -415,7 +464,10 @@ def _evidence_field(
     ]
     if contains:
         passed = any(
-            (isinstance(actual, list) and expected_value in actual)
+            (
+                isinstance(actual, list)
+                and any(_json_values_equal(item, expected_value) for item in actual)
+            )
             or (
                 isinstance(actual, str)
                 and isinstance(expected_value, str)
@@ -424,7 +476,9 @@ def _evidence_field(
             for actual in actual_values
         )
     else:
-        passed = any(actual == expected_value for actual in actual_values)
+        passed = any(
+            _json_values_equal(actual, expected_value) for actual in actual_values
+        )
     return _result(
         assertion,
         passed,
@@ -535,6 +589,14 @@ class EvaluatorRegistry:
         "loop_converged": _loop_converged,
     }
 
+    _enum_expectations: dict[str, type[StrEnum]] = {
+        "intent_in": PrimaryIntent,
+        "request_type_in": RequestType,
+        "risk_signal_in": RiskSignal,
+        "final_action_in": AgentAction,
+        "terminal_status_in": TaskStatus,
+    }
+
     def __init__(
         self,
         evaluators: Mapping[str, EvaluatorFunction] | None = None,
@@ -550,6 +612,114 @@ class EvaluatorRegistry:
     def supports(self, evaluator_type: str) -> bool:
         return evaluator_type in self._evaluators
 
+    def validate_assertion(
+        self,
+        assertion: EvalAssertion,
+        *,
+        turn_count: int,
+    ) -> None:
+        """Validate one assertion's evaluator-specific input contract."""
+
+        if not self.supports(assertion.type):
+            raise ValueError("unknown evaluator type")
+        if assertion.turn_index is not None and assertion.turn_index >= turn_count:
+            raise ValueError("assertion turn index is outside the case turns")
+
+        expected = assertion.expected
+        if assertion.type in self._enum_expectations:
+            enum_type = self._enum_expectations[assertion.type]
+            expected_strings = [
+                item for item in expected if isinstance(item, str)
+            ] if isinstance(expected, list) else []
+            allowed_values = {member.value for member in enum_type}
+            if (
+                not isinstance(expected, list)
+                or not expected
+                or len(expected_strings) != len(expected)
+                or any(item not in allowed_values for item in expected_strings)
+            ):
+                raise ValueError("evaluator expects a non-empty allowed enum list")
+            return
+
+        if assertion.type in {
+            "required_tool_used",
+            "forbidden_tool_not_used",
+            "evidence_source_present",
+        }:
+            if (
+                not isinstance(expected, list)
+                or not expected
+                or not all(isinstance(item, str) and item.strip() for item in expected)
+            ):
+                raise ValueError("evaluator expects a non-empty string list")
+            return
+
+        if assertion.type in {
+            "run_lifecycle_succeeded",
+            "reply_nonempty",
+            "handoff_required",
+            "same_thread_across_turns",
+            "loop_converged",
+        }:
+            if not isinstance(expected, bool):
+                raise ValueError("evaluator expects a boolean")
+            if assertion.type == "same_thread_across_turns" and turn_count < 2:
+                raise ValueError("multi-turn evaluator requires two turns")
+            return
+
+        if assertion.type in {"tool_call_count_lte", "evidence_count_gte"}:
+            if (
+                not isinstance(expected, int)
+                or isinstance(expected, bool)
+                or expected < 0
+            ):
+                raise ValueError("evaluator expects a non-negative integer")
+            return
+
+        if assertion.type == "tool_argument_equals":
+            if not isinstance(expected, dict):
+                raise ValueError("tool argument expectation must be an object")
+            allowed = {"tool", "tool_name", "field", "value"}
+            tool_keys = {key for key in ("tool", "tool_name") if key in expected}
+            if (
+                set(expected) - allowed
+                or len(tool_keys) != 1
+                or "field" not in expected
+                or "value" not in expected
+            ):
+                raise ValueError("tool, field, and value are required")
+            tool_key = next(iter(tool_keys))
+            tool_value = expected[tool_key]
+            field_value = expected["field"]
+            if not isinstance(tool_value, str) or not isinstance(field_value, str):
+                raise ValueError("tool, field, and value are required")
+            if not tool_value.strip() or not field_value.strip():
+                raise ValueError("tool, field, and value are required")
+            return
+
+        if assertion.type in {"evidence_field_equals", "evidence_field_contains"}:
+            if not isinstance(expected, dict):
+                raise ValueError("evidence field expectation must be an object")
+            if (
+                set(expected) - {"source", "field", "value"}
+                or "field" not in expected
+                or "value" not in expected
+                or not isinstance(expected["field"], str)
+                or not expected["field"].strip()
+                or (
+                    "source" in expected
+                    and (
+                        not isinstance(expected["source"], str)
+                        or not expected["source"].strip()
+                    )
+                )
+            ):
+                raise ValueError("field and value are required")
+            return
+
+        # Custom evaluator functions own their expectation schema.  The
+        # loader still enforces registration and turn-index integrity.
+
     def evaluate(
         self,
         assertion: EvalAssertion,
@@ -559,6 +729,8 @@ class EvaluatorRegistry:
         if evaluator is None:
             return _error(assertion, "unknown evaluator type")
         try:
+            for observation in context.observations:
+                _ = observation.canonical_terminal_status
             result = evaluator(assertion, context)
         except Exception:
             # Evaluator failures are safe assertion errors.  Never stringify
