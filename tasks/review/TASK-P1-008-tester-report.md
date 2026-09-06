@@ -1,29 +1,28 @@
 # TASK-P1-008 Independent Tester Report
 
-## Decision
+## Decision — independent re-test
 
-`REQUEST_REMEDIATION`
+`PASS`
 
 ```text
 BLOCKER: 0
-MAJOR: 6
+MAJOR: 0
 MINOR: 0
 NIT: 0
 ```
 
-Reviewer Entry Gate: **NOT MET** (`MAJOR != 0`).
+Reviewer Entry Gate: **MET** (`BLOCKER = 0`, `MAJOR = 0`).
 
-The implementation is not ready for Reviewer re-entry or merge. The
-independent probes found false-positive evaluator behavior, malformed-suite
-acceptance, unsafe loader/API normalization, unverifiable run relations, and
-an eval lifecycle that can remain durably `STARTED` after terminal persistence
-failure.
+This current decision supersedes the initial pre-remediation decision recorded
+below. All 17 retained independent adversarial probes pass on remediation HEAD
+`890f709`; no new Tester finding was identified.
 
 ## Identity and scope
 
 - Role: Independent Tester / adversarial regression pass
-- Product commit tested: `005e489740ce00f1f5d366323b1ad48e141a6e11`
-- Implementation commit under test: `0b01dda`
+- Baseline product commit (initial test): `005e489740ce00f1f5d366323b1ad48e141a6e11`
+- Initial implementation commit: `0b01dda`
+- Re-test product commit: `890f709b4ad72f2cabf8a53b8b04486e1a9c69bd`
 - Base main: `e0e0675d6c638401d91643aa546bb106b3188dca`
 - Tester branch: `task/TASK-P1-008-test`
 - Product source/frontend/dependency files modified by Tester: no
@@ -32,7 +31,7 @@ failure.
 The probes were written independently of the Developer-authored eval tests.
 No prompt, tool, RAG, conversation, or frontend product behavior was changed.
 
-## Findings
+## Initial findings (pre-remediation)
 
 ### MAJOR-1 — JSON equality is not type-strict
 
@@ -170,7 +169,7 @@ The independent suite also passes the following adversarial behaviors:
 - malformed stored eval JSON fails with a safe integrity error;
 - adding the eval schema preserves existing Run schema v1 and Run reads.
 
-## Validation evidence
+## Initial validation evidence (pre-remediation)
 
 ```text
 ../opsmind-p1-007/.venv/bin/python -m pytest
@@ -216,10 +215,79 @@ DEEPSEEK_API_KEY
 → absent; LIVE_EVAL_NOT_RUN
 ```
 
-## Gate decision
+## Initial gate decision (pre-remediation)
 
 Do not return TASK-P1-008 to Reviewer. The Reviewer Entry Gate requires
 `BLOCKER = 0` and `MAJOR = 0`; six independent MAJOR findings remain.
 
 PM Architecture Gate: **PENDING** per `docs/adr/ADR-004-eval-runtime.md`.
 Merge/push: **PROHIBITED** for this Tester task.
+
+## Re-test at remediation HEAD
+
+### Re-test scope and result
+
+The independent Tester re-ran the original 17 probes without relying on the
+Developer's reported result. All 17 passed. The six initial MAJOR findings are
+closed as follows.
+
+| Initial finding | Independent closure evidence |
+| --- | --- |
+| MAJOR-1 — JSON equality type strictness | Boolean `false` no longer satisfies numeric `0` for tool arguments or evidence; the retained probe passes. The fixed comparison is at `src/opsmind/evals/evaluators.py:67-85`, with call sites at `:365` and `:479-480`. |
+| MAJOR-2 — Invalid terminal status | A fabricated `NOT_A_TASK_STATUS` observation now yields evaluator `ERROR`; the retained probe passes. Canonical conversion/validation is at `src/opsmind/evals/models.py:182-209` and `src/opsmind/evals/evaluators.py:731-738`. |
+| MAJOR-3 — Invalid evaluator expectations | Missing required keys, wrong expectation shape, and out-of-range `turn_index` are rejected during load; all three parametrized probes pass. Validation is at `src/opsmind/evals/loader.py:89-115` and `src/opsmind/evals/evaluators.py:615-718`. |
+| MAJOR-4 — Deep nesting/API normalization | A 1,200-level suite is normalized to `EvalSuiteLoadError`, and the API returns 422 `EVAL_SUITE_INVALID`; both retained probes pass. Depth and decoder handling are at `src/opsmind/evals/loader.py:56-73` and `src/opsmind/evals/models.py:39-102`. |
+| MAJOR-5 — Fabricated run links | Completion without a run-reference verifier now fails closed and leaves the job `STARTED`; the retained persistence probe passes. The guard is at `src/opsmind/evals/persistence.py:99-111`. |
+| MAJOR-6 — Terminal persistence lifecycle | When completed-job finalization fails, the runner performs a safe `FAILED` transition; the retained injected-outage probe observes durable `FAILED` and passes. The fallback is at `src/opsmind/evals/runner.py:64-94`. |
+
+### Re-test validation evidence
+
+```text
+../opsmind-p1-007/.venv/bin/python -m pytest -q \
+  tests/test_p1_008_independent_adversarial.py
+→ 17 passed, 1 warning
+
+../opsmind-p1-007/.venv/bin/python -m pytest
+→ 554 passed, 1 deselected, 1 warning
+
+../opsmind-p1-007/.venv/bin/ruff check .
+→ PASS
+
+../opsmind-p1-007/.venv/bin/mypy src
+→ Success: no issues found in 51 source files
+
+git diff --check
+→ PASS
+
+cd web && npm test
+→ 4 files passed; 22 tests passed
+
+cd web && npm run lint
+→ PASS
+
+cd web && npm run build
+→ PASS
+
+DEEPSEEK_API_KEY
+→ absent; LIVE_EVAL_NOT_RUN
+```
+
+The only test warning is the pre-existing Starlette `TestClient`/`httpx`
+deprecation warning. No product `src` or frontend files were changed by the
+Tester, and no push or merge was performed.
+
+### Final gate decision
+
+Re-entry to Reviewer is approved from the independent Tester perspective:
+
+```text
+BLOCKER = 0
+MAJOR = 0
+MINOR = 0
+NIT = 0
+Reviewer Entry Gate = MET
+```
+
+PM Architecture Gate remains **PENDING** per
+`docs/adr/ADR-004-eval-runtime.md`. Merge/push remain **PROHIBITED** for this
+Tester task.
