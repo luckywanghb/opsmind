@@ -2,13 +2,13 @@
 
 ## Status
 
-`PM_ARCHITECTURE_GATE` (`PENDING`)
+`READY_TO_MERGE` (`PM_GATE_APPROVED`)
 
 ## Risk
 
-`HIGH` — introduces a persistence and execution boundary that requires an ADR
-and independent review. The PM Architecture Gate remains outside this
-Developer task.
+`HIGH` — introduced a persistence and execution boundary covered by ADR-004,
+independent Tester/Reviewer gates, and the PM Architecture Gate approved on
+2026-09-06.
 
 ## Owner role
 
@@ -88,5 +88,8 @@ result separately from deterministic/offline validation.
 ## Handoff state
 
 Developer implementation has passed the final independent Tester and Reviewer
-gates after the required local validation. The PM Architecture Gate remains
-pending, and merge remains prohibited.
+gates after the required local validation. GitHub PR #21 passed Python and Web
+validation on delivery HEAD `dc9888a0a39708ec74328e7e0c068128a3158b48`.
+The PM Architecture Gate approved ADR-004 and authorized squash merge on
+2026-09-06. A governance-only closure commit is the final pre-merge change;
+product, test, Eval behavior, and Golden expectations remain unchanged.

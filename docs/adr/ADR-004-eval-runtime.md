@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposed for TASK-P1-008; PM Architecture Gate remains required before merge.
+Accepted.
+
+Approved by the PM Architecture Gate on 2026-09-06. Remote verification for
+TASK-P1-008 passed on GitHub PR #21 before final merge authorization.
 
 ## Context
 

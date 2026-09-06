@@ -2,14 +2,15 @@
 
 ## Reporter PM View
 
-- **Stage:** `PM_ARCHITECTURE_GATE` (`PENDING`)
+- **Stage:** `READY_TO_MERGE` (`PM_GATE_APPROVED`)
 - **Risk:** `HIGH`
 - **Architecture impact:** `ARCHITECTURE_CHANGE`
 - **Branch:** `task/TASK-P1-008-dev`
-- **Product + artifact HEAD:** `3c1c0f082b331aa88eec65c28fe2638d85d0c173`
-- **Issue:** `PENDING_AUTH`
-- **PR:** `PENDING_AUTH`
-- **PM action:** `REVIEW_REQUIRED`
+- **Reviewed Product HEAD:** `3c1c0f082b331aa88eec65c28fe2638d85d0c173`
+- **Verified delivery HEAD:** `dc9888a0a39708ec74328e7e0c068128a3158b48`
+- **Issue:** `#20`
+- **PR:** `#21` (`DRAFT`, exact-HEAD CI passed)
+- **PM action:** `NONE` (PM recorded `APPROVE FOR MERGE` on 2026-09-06)
 
 ### Outcome
 
@@ -19,7 +20,8 @@
   real persisted `AgentRun` links per eval turn, safe bounded observations,
   and transactional eval persistence/API projections.
 - Independent Tester and Sol Medium Reviewer gates are satisfied. The PM
-  Architecture Gate is still pending; merge remains prohibited.
+  Architecture Gate approved ADR-004 and authorized squash merge after the
+  governance-only closure commit passes exact-HEAD CI.
 
 ### Validation evidence
 
@@ -31,14 +33,14 @@
 - Mypy: `PASS`.
 - Lock: `uv lock --check` — `PASS` (55 packages resolved).
 - `git diff --check`: `PASS`.
-- CI: `NOT_RUN / PENDING` because this branch has not been pushed; no CI URL
-  or CI result is claimed.
+- GitHub PR #21 CI on `dc9888a0a39708ec74328e7e0c068128a3158b48`:
+  Python validation `PASS`; Web validation `PASS`.
 - Live DeepSeek Eval: `LIVE_EVAL_NOT_RUN`; `DEEPSEEK_API_KEY` was absent
   (presence checked without reading or recording a value).
 
 ### Architecture impact
 
-`ARCHITECTURE_CHANGE` is supported by the proposed ADR-004 and the reviewed
+`ARCHITECTURE_CHANGE` is supported by the accepted ADR-004 and the reviewed
 implementation boundaries:
 
 - **Shared execution boundary:** `AgentExecutionService` owns the shared
@@ -55,26 +57,65 @@ implementation boundaries:
 - **Eval persistence:** `EvalPersistenceService → EvalRepository →
   SQLiteEvalRepository`, with a separate eval schema v1, transactional
   finalization, and real run-reference verification.
-- **ADR-004:** present and `Proposed`; PM Architecture Gate is required
-  before merge.
+- **ADR-004:** `Accepted`; approved by the PM Architecture Gate on 2026-09-06.
 
 ### Deviations and blockers
 
 - No acceptance criteria or product scope was changed.
 - Live evaluation was not run because the configured credential was absent;
   this is recorded as `LIVE_EVAL_NOT_RUN`, not as a quality result.
-- GitHub control-plane work is pending authentication. `gh auth status`
-  reports the default GitHub token is invalid, so no Issue/PR/CI URL is
-  asserted.
+- GitHub Issue #20 and Draft PR #21 are published. Remote Python/Web validation
+  passed on the verified delivery HEAD. No closure blocker remains.
 
-**PM decision needed:** approve or reject the proposed ADR-004 architecture
-for TASK-P1-008 after reviewing the handoff and the current product HEAD.
+**PM decision:** `APPROVE FOR MERGE`.
 
-**Recommended next action:** restore GitHub CLI authentication, create the
-Issue and Draft PR, push the current branch, record the resulting CI evidence,
-then record the PM Architecture Gate decision. The Reporter must not merge.
+**Authorized next action:** commit and push this governance-only closure,
+require Python/Web GitHub CI to pass on its exact HEAD, mark PR #21 ready, and
+squash merge into `main`. No product, test, Eval behavior, or Golden expectation
+change is authorized.
 
-## §67 PM Handoff Format
+## Governance closure status
+
+This section is the authoritative status and supersedes the historical
+pre-remote handoff snapshots retained below for audit history.
+
+```json
+{
+  "task_id": "TASK-P1-008",
+  "stage": "READY_TO_MERGE",
+  "risk": "HIGH",
+  "issue": 20,
+  "pr": 21,
+  "commit_sha": "dc9888a0a39708ec74328e7e0c068128a3158b48",
+  "reviewed_product_head": "3c1c0f082b331aa88eec65c28fe2638d85d0c173",
+  "verified_delivery_head": "dc9888a0a39708ec74328e7e0c068128a3158b48",
+  "outcome": [
+    "Implemented and independently validated the backend-owned opsmind-golden 0.1 Eval Runtime.",
+    "ADR-004 is Accepted and the PM Architecture Gate authorized squash merge after governance-only exact-HEAD CI."
+  ],
+  "validation": {
+    "backend": {"status": "PASS", "passed": 590, "deselected": 1},
+    "frontend": {"tests": "PASS", "passed": 22, "lint": "PASS", "build": "PASS"},
+    "pr_head_ci": {"python": "PASS", "web": "PASS"},
+    "git_diff_check": "PASS",
+    "live_eval": "LIVE_EVAL_NOT_RUN"
+  },
+  "architecture_impact": "ARCHITECTURE_CHANGE",
+  "adr_004": "ACCEPTED",
+  "deviations": [
+    "Live Eval was not run because DEEPSEEK_API_KEY was not configured; PM declared this non-blocking."
+  ],
+  "blockers": [],
+  "review": {
+    "tester": "PASS_B0_M0",
+    "reviewer": "APPROVE_B0_M0",
+    "gate": "MET"
+  },
+  "pm_action": "NONE"
+}
+```
+
+## Historical pre-remote §67 PM Handoff Format
 
 TASK-P1-008
 
@@ -202,7 +243,7 @@ PM Architecture Gate: `PENDING`
 
 Merge: `PROHIBITED`
 
-## Exact GitHub TODO
+## Historical GitHub TODO (completed or superseded)
 
 1. Re-authenticate GitHub CLI with `gh auth login -h github.com`, then verify
    `gh auth status` is valid.
@@ -215,7 +256,7 @@ Merge: `PROHIBITED`
    decision. Only an explicit approval plus passing required CI can move the
    task toward merge; this handoff does not authorize merge.
 
-## Structured JSON Status Object
+## Historical Structured JSON Status Object (superseded)
 
 ```json
 {

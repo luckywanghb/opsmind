@@ -7,10 +7,10 @@
 - Branch: `task/TASK-P1-008-dev`
 - Base SHA: `e0e0675d6c638401d91643aa546bb106b3188dca`
 - Implementation commit: `0b01dda`
-- Stage: `PM_ARCHITECTURE_GATE` (`PENDING`)
+- Stage: `READY_TO_MERGE` (`PM_GATE_APPROVED`)
 - Architecture impact: `ARCHITECTURE_CHANGE`
-- PM Architecture Gate: `PENDING`
-- Merge: `PROHIBITED`
+- PM Architecture Gate: `APPROVED` on 2026-09-06
+- Merge: `AUTHORIZED` after governance-only closure and exact-HEAD CI pass
 
 ## Outcome and architecture summary
 
@@ -91,13 +91,14 @@ the coordinator-verified result requested for this closeout.
 
 - `tasks/active/TASK-P1-008-eval-runtime-and-golden-suite.md` contains the
   scoped goal, dependencies, in/out-of-scope constraints, acceptance criteria,
-  required validation, and Developer handoff state. It remains `IN_PROGRESS`
-  because independent Tester/Reviewer and the PM Architecture Gate are still
-  pending.
+  required validation, and Developer handoff state. It is `READY_TO_MERGE`
+  after independent Tester/Reviewer approval, remote verification, and the PM
+  Architecture Gate.
 - `docs/adr/ADR-004-eval-runtime.md` documents the shared execution boundary,
   safe evaluation observation, deterministic evaluator contract, persistence
   schema/transaction rules, API surface, consequences, and explicit
-  non-goals. Its status remains `Proposed` pending the PM Architecture Gate.
+  non-goals. Its status is `Accepted`, approved by the PM Architecture Gate on
+  2026-09-06.
 
 ## Known limitations and handoff
 
@@ -106,14 +107,15 @@ the coordinator-verified result requested for this closeout.
   and conversation-persistence capabilities.
 - Independent Tester: `PASS` (0 BLOCKER / 0 MAJOR / 0 MINOR / 0 NIT).
 - Independent Reviewer: `APPROVE` (0 BLOCKER / 0 MAJOR / 0 MINOR / 0 NIT).
-- CI: `NOT_RUN / PENDING` because the branch has not been pushed and GitHub
-  CLI authentication is invalid; no CI URL or result is claimed.
-- PM Architecture Gate remains `PENDING`; merge remains `PROHIBITED`.
+- PR-head CI on GitHub PR #21: Python validation `PASS`; Web validation `PASS`
+  on `dc9888a0a39708ec74328e7e0c068128a3158b48`.
+- PM Architecture Gate: `APPROVED`; squash merge is authorized after the
+  governance-only closure commit passes exact-HEAD CI.
 
 The final independent Tester/Reviewer handoff is complete and recorded in
-`tasks/review/TASK-P1-008-delivery-handoff.md`. The PM Architecture Gate
-remains pending, and merge remains prohibited until the required governance
-gates pass.
+`tasks/review/TASK-P1-008-delivery-handoff.md`. ADR-004 and the PM Architecture
+Gate are approved; the task is ready for its governance-only closure commit,
+exact-HEAD CI, and authorized squash merge.
 
 ## Post-Tester remediation addendum
 
@@ -128,8 +130,9 @@ eval persistence failure.
 
 Details are recorded in
 `tasks/review/TASK-P1-008-developer-remediation-report.md`. The original Tester
-report remains unchanged and the branch remains unpushed and unmerged pending
-independent retest and the PM Architecture Gate.
+report remains unchanged. At that historical remediation checkpoint, the
+branch remained unpushed and unmerged pending independent retest and the PM
+Architecture Gate; the later closure status above supersedes that checkpoint.
 
 ## Post-Reviewer remediation addendum
 
@@ -159,6 +162,8 @@ The detailed record is
 verification for the Developer remediation was 582 passed and 1 deselected in
 the full pytest run, with Ruff, Mypy, and `git diff --check` passing. The final
 independent Tester and Reviewer evidence subsequently confirmed 590 passed and
-the Reviewer Gate as met. The branch remains unpushed and unmerged pending the
-PM Architecture Gate; GitHub Issue/PR remain `PENDING_AUTH` and CI remains
-`NOT_RUN / PENDING`.
+the Reviewer Gate as met. GitHub Issue #20 and Draft PR #21 are published,
+PR-head Python/Web CI passed on
+`dc9888a0a39708ec74328e7e0c068128a3158b48`, and the PM Architecture Gate
+approved ADR-004 and authorized squash merge on 2026-09-06, subject to
+exact-HEAD CI after the governance-only closure commit.
