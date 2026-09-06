@@ -39,6 +39,8 @@ safety boundaries.
   supported
 - Backend evaluation: the versioned V0.1 Golden Suite is runnable through
   `POST /api/v1/evals/run` and queryable via `GET /api/v1/evals`
+- Phase 2 Evaluation & Observability: complete — TASK-P1-008 backend Eval
+  Runtime and TASK-P1-009 real Eval UI delivered and PM-approved
 - Runtime capability: `READ_ONLY` (three synthetic typed query tools)
 - GitHub Issues and Pull Requests: development control plane
 - Delivery Reporter: required at meaningful task transitions
