@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_PROGRESS`
+`PM_FINAL_GATE/PENDING`
 
 ## Risk
 
@@ -10,14 +10,17 @@
 
 ## Owner role
 
-`Developer`
+`Delivery Reporter`
 
 ## Control plane
 
 - Issue: `#22`
-- Draft PR: `PENDING`
+- Draft PR: `#23` (`OPEN`, `DRAFT`)
 - Branch: `task/TASK-P1-009-dev`
 - Base: `3440130c741f311a436d76155a38e2d7a0fc7d74`
+- Reviewed Product HEAD: `522f62a722e97fc9344f8d1abd64d7276e843c76`
+- PM Final Gate: `PENDING`
+- Merge: `PROHIBITED`
 
 ## Goal
 
