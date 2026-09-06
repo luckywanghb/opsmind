@@ -751,29 +751,31 @@ class SQLiteRunRepository:
     @staticmethod
     def _validate_unique_constraints(connection: sqlite3.Connection) -> None:
         expected = {
-            "schema_metadata": frozenset({(False, ("key",))}),
-            "agent_runs": frozenset(
-                {
+            "schema_metadata": ((False, ("key",)),),
+            "agent_runs": (
+                (
                     (False, ("run_id",)),
                     (False, ("request_id",)),
-                }
+                )
             ),
-            "run_steps": frozenset({(False, ("run_id", "sequence"))}),
-            "evidence_records": frozenset(
-                {
+            "run_steps": ((False, ("run_id", "sequence")),),
+            "evidence_records": (
+                (
                     (False, ("run_id", "sequence")),
                     (False, ("run_id", "evidence_id")),
-                }
+                )
             ),
         }
         for table, expected_constraints in expected.items():
             indexes = SQLiteRunRepository._index_definitions(connection, table)
-            actual_constraints = frozenset(
-                (partial, columns)
-                for _, unique, partial, columns in indexes
-                if unique
+            actual_constraints = tuple(
+                sorted(
+                    (partial, columns)
+                    for _, unique, partial, columns in indexes
+                    if unique
+                )
             )
-            if actual_constraints != expected_constraints:
+            if actual_constraints != tuple(sorted(expected_constraints)):
                 raise IncompatibleRunSchemaError(
                     f"run schema table {table} has incompatible uniqueness"
                 )
