@@ -492,8 +492,8 @@ and arbitrary source context are outside the persistence boundary.
 Persistence fails closed: an initial write failure prevents Agent execution,
 and terminal write failure prevents a success response. SQLite is a local
 implementation and can be replaced behind the repository contract. This
-architecture is neither conversation memory/checkpointing, eval execution,
-nor raw tracing. See ADR-003.
+run-persistence boundary is separate from conversation memory/checkpointing and
+the backend eval runtime; it is not raw tracing. See ADR-003 and ADR-004.
 
 ---
 

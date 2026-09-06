@@ -37,6 +37,8 @@ safety boundaries.
 - Run persistence: validated runs are queryable via `GET /api/v1/runs` and
   `GET /api/v1/runs/{run_id}`; conversation checkpoints/restoration are not
   supported
+- Backend evaluation: the versioned V0.1 Golden Suite is runnable through
+  `POST /api/v1/evals/run` and queryable via `GET /api/v1/evals`
 - Runtime capability: `READ_ONLY` (three synthetic typed query tools)
 - GitHub Issues and Pull Requests: development control plane
 - Delivery Reporter: required at meaningful task transitions
@@ -44,10 +46,11 @@ safety boundaries.
 The current implementation provides the validated V0.1 `OpsAgentState`, a
 provider-neutral Model Gateway, a bounded model-driven LangGraph loop, typed
 synthetic work-order/permission/incident queries, a typed FastAPI surface, and
-versioned persistence for validated Agent runs. Persistence is an audit record
-only: it does not provide conversation checkpoints, restoration, or memory.
-RAG, authentication, and write actions remain intentionally absent. D01–D03
-are fixtures; the graph has no case-specific routing.
+versioned persistence for validated Agent runs plus a backend-owned deterministic
+Golden Suite and eval runtime. Persistence is an audit record only: it does not
+provide conversation checkpoints, restoration, or memory. RAG,
+authentication, write actions, and an Eval UI remain intentionally absent.
+D01–D03 are fixtures; the graph has no case-specific routing.
 
 ## Development
 

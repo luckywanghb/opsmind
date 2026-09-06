@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from time import perf_counter
 from typing import Annotated, cast
 from uuid import uuid4
@@ -16,28 +17,31 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from opsmind.agent.errors import AgentInputError
-from opsmind.agent.graph import bounded_trace_summary
-from opsmind.agent.grounding import stable_evidence_items
 from opsmind.api.composition import build_runtime
-from opsmind.api.run_observability import (
-    normalized_error_code,
-    persist_chat_success,
-    safe_failure_steps,
-)
-from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
+from opsmind.api.runtime import OpsAgentRuntime
 from opsmind.api.schemas import (
-    AgentTraceStep,
-    ChatDecision,
-    ChatEvidence,
-    ChatHandoff,
     ChatRequest,
     ChatResponse,
-    ChatUnderstanding,
     ErrorDetail,
     ErrorResponse,
+    EvalRunRequest,
     HealthResponse,
 )
 from opsmind.api.settings import RuntimeSettings
+from opsmind.evals import (
+    EvalJob,
+    EvalJobSummary,
+    EvalNotFoundError,
+    EvalPersistenceError,
+    EvalPersistenceService,
+    EvalRepository,
+    EvalRunner,
+    EvalRunnerError,
+    EvalSuiteLoader,
+    EvalSuiteLoadError,
+    SQLiteEvalRepository,
+)
+from opsmind.execution import AgentExecutionError, AgentExecutionService
 from opsmind.models import (
     ModelInvocationError,
     ModelStructuredOutputError,
@@ -52,7 +56,7 @@ from opsmind.runs import (
     RunRepository,
     SQLiteRunRepository,
 )
-from opsmind.state import IdentityState, OpsAgentState
+from opsmind.state import OpsAgentState
 
 LOGGER = logging.getLogger("opsmind.api")
 RequestHandler = Callable[[Request], Awaitable[Response]]
@@ -109,96 +113,20 @@ def _error_response(
     )
 
 
-def _trace_summary(result: AgentRunResult, node: str) -> str:
-    if node == "understand_request":
-        understanding = result.state.understanding
-        return bounded_trace_summary(
-            f"{understanding.primary_intent} / {understanding.request_type}"
-        )
-    decision = result.state.decision
-    return bounded_trace_summary(
-        decision.action.value if decision.action is not None else "ACTION_UNKNOWN"
-    )
-
-
-def _trace(result: AgentRunResult) -> list[AgentTraceStep]:
-    if result.events:
-        return [
-            AgentTraceStep(
-                node=event.node,
-                task=event.task,
-                profile=event.profile,
-                status=event.status,
-                summary=event.summary,
-            )
-            for event in result.events
-        ]
-    steps: list[AgentTraceStep] = []
-    for invocation in result.invocations:
-        node = invocation.request.metadata.get("node")
-        if not isinstance(node, str) or not node:
-            continue
-        steps.append(
-            AgentTraceStep(
-                node=node,
-                task=invocation.request.task,
-                profile=invocation.request.profile,
-                summary=_trace_summary(result, node),
-            )
-        )
-    return steps
-
-
-def _chat_response(
-    result: AgentRunResult,
-    *,
-    request_id: str,
-    run_id: str,
-    thread_id: str,
-) -> ChatResponse:
-    understanding = ChatUnderstanding.model_validate(
-        result.state.understanding.model_dump()
-    )
-    decision = ChatDecision.model_validate(result.state.decision.model_dump())
-    state_status = result.state.task.status
-    status = {
-        "WAITING_USER": "waiting_user",
-        "TRANSFERRED": "transferred",
-        "RESOLVED": "completed",
-        "CLOSED": "closed",
-    }.get(state_status.value if state_status is not None else "", "decision_ready")
-    handoff = (
-        ChatHandoff(
-            required=result.state.handoff.required,
-            summary=result.state.handoff.summary,
-        )
-        if result.state.handoff.required or result.state.handoff.summary
-        else None
-    )
-    return ChatResponse(
-        request_id=request_id,
-        run_id=run_id,
-        thread_id=thread_id,
-        status=status,
-        final_status=state_status.value if state_status is not None else None,
-        understanding=understanding,
-        decision=decision,
-        trace=_trace(result),
-        final_reply=result.state.response.message,
-        evidence=[
-            ChatEvidence.model_validate(item.model_dump())
-            for item in stable_evidence_items(result.state.evidence.items)
-        ],
-        handoff=handoff,
-    )
-
-
-def _runtime_dependency(request: Request) -> OpsAgentRuntime:
-    return cast(OpsAgentRuntime, request.app.state.runtime)
-
-
 def _run_service_dependency(request: Request) -> RunPersistenceService:
     return cast(RunPersistenceService, request.app.state.run_persistence)
+
+
+def _execution_dependency(request: Request) -> AgentExecutionService:
+    return cast(AgentExecutionService, request.app.state.execution_service)
+
+
+def _eval_runner_dependency(request: Request) -> EvalRunner:
+    return cast(EvalRunner, request.app.state.eval_runner)
+
+
+def _eval_persistence_dependency(request: Request) -> EvalPersistenceService:
+    return cast(EvalPersistenceService, request.app.state.eval_persistence)
 
 
 class _RequestContextMiddleware(BaseHTTPMiddleware):
@@ -236,6 +164,9 @@ def create_app(
     runtime: OpsAgentRuntime | None = None,
     settings: RuntimeSettings | None = None,
     run_repository: RunRepository | None = None,
+    eval_repository: EvalRepository | None = None,
+    eval_suite_loader: EvalSuiteLoader | None = None,
+    eval_runner: EvalRunner | None = None,
 ) -> FastAPI:
     """Create an explicitly composed and dependency-injectable application."""
 
@@ -251,6 +182,34 @@ def create_app(
         configured_repository,
         app_version=app.version,
         build_sha=configured_settings.build_sha,
+    )
+    app.state.execution_service = AgentExecutionService(
+        configured_runtime,
+        app.state.run_persistence,
+        state_factory=OpsAgentState,
+    )
+    eval_store_path: str | Path = configured_settings.run_store_path
+    repository_path = getattr(configured_repository, "path", None)
+    if isinstance(repository_path, (str, Path)):
+        # The default eval schema belongs in the same SQLite file as the run
+        # schema.  This also keeps dependency-injected SQLite repositories
+        # isolated in tests without requiring a second path argument.
+        eval_store_path = repository_path
+    configured_eval_repository = eval_repository or SQLiteEvalRepository(
+        eval_store_path
+    )
+    app.state.eval_repository = configured_eval_repository
+    app.state.eval_persistence = EvalPersistenceService(
+        configured_eval_repository,
+        app_version=app.version,
+        build_sha=configured_settings.build_sha,
+        run_repository=configured_repository,
+    )
+    configured_loader = eval_suite_loader or EvalSuiteLoader()
+    app.state.eval_runner = eval_runner or EvalRunner(
+        loader=configured_loader,
+        execution_service=app.state.execution_service,
+        persistence=app.state.eval_persistence,
     )
     app.add_middleware(_RequestContextMiddleware)
 
@@ -309,6 +268,62 @@ def create_app(
             status_code=503,
             code="RUN_PERSISTENCE_UNAVAILABLE",
             message="Agent run persistence is unavailable",
+        )
+
+    @app.exception_handler(EvalSuiteLoadError)
+    async def eval_suite_handler(
+        request: Request,
+        exc: EvalSuiteLoadError,
+    ) -> JSONResponse:
+        del exc
+        return _error_response(
+            request,
+            status_code=422,
+            code="EVAL_SUITE_INVALID",
+            message="Evaluation suite is invalid",
+        )
+
+    @app.exception_handler(EvalNotFoundError)
+    async def eval_not_found_handler(
+        request: Request,
+        exc: EvalNotFoundError,
+    ) -> JSONResponse:
+        del exc
+        return _error_response(
+            request,
+            status_code=404,
+            code="EVAL_NOT_FOUND",
+            message="Evaluation job was not found",
+        )
+
+    @app.exception_handler(EvalPersistenceError)
+    async def eval_persistence_handler(
+        request: Request,
+        exc: EvalPersistenceError,
+    ) -> JSONResponse:
+        LOGGER.error(
+            "eval_persistence_unavailable request_id=%s error_type=%s",
+            _request_id(request),
+            type(exc).__name__,
+        )
+        return _error_response(
+            request,
+            status_code=503,
+            code="EVAL_PERSISTENCE_UNAVAILABLE",
+            message="Evaluation persistence is unavailable",
+        )
+
+    @app.exception_handler(EvalRunnerError)
+    async def eval_runner_handler(
+        request: Request,
+        exc: EvalRunnerError,
+    ) -> JSONResponse:
+        del exc
+        return _error_response(
+            request,
+            status_code=500,
+            code="EVAL_RUN_FAILED",
+            message="Evaluation run failed",
         )
 
     @app.exception_handler(ModelStructuredOutputError)
@@ -377,59 +392,30 @@ def create_app(
     async def chat(
         payload: ChatRequest,
         request: Request,
-        agent_runtime: Annotated[
-            OpsAgentRuntime,
-            Depends(_runtime_dependency),
-        ],
-        run_persistence: Annotated[
-            RunPersistenceService,
-            Depends(_run_service_dependency),
+        execution_service: Annotated[
+            AgentExecutionService,
+            Depends(_execution_dependency),
         ],
     ) -> ChatResponse:
         thread_id = payload.thread_id or str(uuid4())
         request.state.thread_id = thread_id
-        active_run = run_persistence.start(
-            request_id=_request_id(request),
-            thread_id=thread_id,
-            input_message=payload.message,
-            source_context=payload.source_context,
-        )
-        request.state.run_id = active_run.run_id
         try:
-            user_id = payload.source_context.get("user_id")
-            site_id = payload.source_context.get("site_id")
-            state = OpsAgentState(
-                identity=IdentityState(
-                    user_id=user_id if isinstance(user_id, str) else None,
-                    site_id=site_id if isinstance(site_id, str) else None,
-                    source_context=payload.source_context,
-                ),
-                conversation={
-                    "thread_id": thread_id,
-                    "original_query": payload.message,
-                    "current_query": payload.message,
-                },
-            )
-            result = await agent_runtime.run_with_trace(state)
-            response = _chat_response(
-                result,
+            result = await execution_service.execute(
+                message=payload.message,
+                source_context=payload.source_context,
                 request_id=_request_id(request),
-                run_id=active_run.run_id,
                 thread_id=thread_id,
             )
-        except Exception as exc:
-            try:
-                run_persistence.fail(
-                    active_run,
-                    error_code=normalized_error_code(exc),
-                    steps=safe_failure_steps(exc),
-                )
-            except RunPersistenceError as persistence_error:
-                raise persistence_error from None
+        except AgentExecutionError as exc:
+            request.state.run_id = exc.run_id
+            raise exc.cause from None
+        except RunPersistenceError as exc:
+            run_id = getattr(exc, "run_id", None)
+            if isinstance(run_id, str):
+                request.state.run_id = run_id
             raise
-
-        persist_chat_success(run_persistence, active_run, response)
-        return response
+        request.state.run_id = result.run_id
+        return result.response
 
     @app.get(
         "/api/v1/runs",
@@ -466,5 +452,60 @@ def create_app(
         ],
     ) -> AgentRun:
         return run_persistence.get(run_id)
+
+    @app.post(
+        "/api/v1/evals/run",
+        response_model=EvalJob,
+        responses={
+            422: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["evals"],
+    )
+    async def run_eval(
+        payload: EvalRunRequest,
+        eval_runner: Annotated[
+            EvalRunner,
+            Depends(_eval_runner_dependency),
+        ],
+    ) -> EvalJob:
+        return await eval_runner.run_suite(payload.suite_id)
+
+    @app.get(
+        "/api/v1/evals",
+        response_model=list[EvalJobSummary],
+        responses={503: {"model": ErrorResponse}},
+        tags=["evals"],
+    )
+    async def list_evals(
+        eval_persistence: Annotated[
+            EvalPersistenceService,
+            Depends(_eval_persistence_dependency),
+        ],
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> list[EvalJobSummary]:
+        return eval_persistence.list(limit=limit)
+
+    @app.get(
+        "/api/v1/evals/{eval_job_id}",
+        response_model=EvalJob,
+        responses={
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["evals"],
+    )
+    async def get_eval(
+        eval_job_id: Annotated[
+            str,
+            PathParameter(min_length=1, max_length=128),
+        ],
+        eval_persistence: Annotated[
+            EvalPersistenceService,
+            Depends(_eval_persistence_dependency),
+        ],
+    ) -> EvalJob:
+        return eval_persistence.get(eval_job_id)
 
     return app

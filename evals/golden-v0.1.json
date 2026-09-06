@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "suite_id": "opsmind-golden",
+  "suite_version": "0.1",
+  "description": "Backend-owned deterministic Golden Cases for OpsMind V0.1.",
+  "cases": [
+    {
+      "case_id": "C01",
+      "title": "故障工单关闭指引",
+      "turns": [{"message": "故障工单应该怎么关闭？"}],
+      "source_context": {"channel": "eval"},
+      "known_gap": "KNOWLEDGE_RUNTIME_NOT_IMPLEMENTED",
+      "notes": "knowledge_search is intentionally not registered in V0.1.",
+      "assertions": [
+        {"assertion_id": "intent", "type": "intent_in", "expected": ["SYSTEM_OPERATION"], "blocking": true},
+        {"assertion_id": "request", "type": "request_type_in", "expected": ["HOW_TO"], "blocking": true},
+        {"assertion_id": "action", "type": "final_action_in", "expected": ["SEARCH"], "blocking": true},
+        {"assertion_id": "tool", "type": "required_tool_used", "expected": ["knowledge_search"], "blocking": true}
+      ]
+    },
+    {
+      "case_id": "C03",
+      "title": "菜单访问权限缺失",
+      "turns": [{"message": "别人都有设备台账菜单，为什么我没有？"}],
+      "source_context": {"user_id": "U10023", "site_id": "星川基地", "channel": "eval"},
+      "assertions": [
+        {"assertion_id": "intent", "type": "intent_in", "expected": ["ACCESS_ISSUE"], "blocking": true},
+        {"assertion_id": "request", "type": "request_type_in", "expected": ["DIAGNOSE"], "blocking": true},
+        {"assertion_id": "tool", "type": "required_tool_used", "expected": ["permission_query"], "blocking": true},
+        {"assertion_id": "missing_permission", "type": "evidence_field_contains", "expected": {"source": "permission_query", "field": "missing_permissions", "value": "EQUIPMENT_LEDGER_VIEW"}, "blocking": true}
+      ]
+    },
+    {
+      "case_id": "C05",
+      "title": "工单处于正常审批等待",
+      "turns": [{"message": "WO20260001为什么一直没处理？"}],
+      "source_context": {"channel": "eval"},
+      "assertions": [
+        {"assertion_id": "intent", "type": "intent_in", "expected": ["WORKFLOW_ISSUE"], "blocking": true},
+        {"assertion_id": "request", "type": "request_type_in", "expected": ["CHECK_STATUS", "DIAGNOSE"], "blocking": true},
+        {"assertion_id": "tool", "type": "required_tool_used", "expected": ["work_order_query"], "blocking": true},
+        {"assertion_id": "argument", "type": "tool_argument_equals", "expected": {"tool": "work_order_query", "field": "work_order_id", "value": "WO20260001"}, "blocking": true},
+        {"assertion_id": "status", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "status", "value": "APPROVING"}, "blocking": true},
+        {"assertion_id": "node", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "current_node", "value": "设备主管审批"}, "blocking": true},
+        {"assertion_id": "abnormal", "type": "evidence_field_equals", "expected": {"source": "work_order_query", "field": "abnormal", "value": false}, "blocking": true}
+      ]
+    },
+    {
+      "case_id": "C06",
+      "title": "工单提交校验失败",
+      "turns": [{"message": "我的工单提交失败了，帮我看看。"}],
+      "source_context": {"channel": "eval"},
+      "assertions": [
+        {"assertion_id": "intent", "type": "intent_in", "expected": ["WORKFLOW_ISSUE"], "blocking": true},
+        {"assertion_id": "action", "type": "final_action_in", "expected": ["ASK_USER"], "blocking": true},
+        {"assertion_id": "terminal", "type": "terminal_status_in", "expected": ["WAITING_USER"], "blocking": true},
+        {"assertion_id": "no_search", "type": "tool_call_count_lte", "expected": 0, "blocking": true},
+        {"assertion_id": "reply", "type": "reply_nonempty", "expected": true, "blocking": true}
+      ]
+    },
+    {
+      "case_id": "C09",
+      "title": "系统页面 HTTP 500",
+      "turns": [{"message": "打开 EquipFlow 页面提示 HTTP 500，帮我看看是什么问题。"}],
+      "source_context": {"channel": "eval"},
+      "known_gap": "LOG_SEARCH_NOT_IMPLEMENTED",
+      "notes": "log_search is intentionally not registered in V0.1.",
+      "assertions": [
+        {"assertion_id": "intent", "type": "intent_in", "expected": ["SYSTEM_OPERATION"], "blocking": true},
+        {"assertion_id": "request", "type": "request_type_in", "expected": ["DIAGNOSE"], "blocking": true},
+        {"assertion_id": "action", "type": "final_action_in", "expected": ["SEARCH"], "blocking": true},
+        {"assertion_id": "tool", "type": "required_tool_used", "expected": ["log_search"], "blocking": true}
+      ]
+    },
+    {
+      "case_id": "C10",
+      "title": "站点范围大面积中断",
+      "turns": [{"message": "今天整个星川基地的人都进不去EquipFlow。"}],
+      "source_context": {"site_id": "星川基地", "channel": "eval"},
+      "assertions": [
+        {"assertion_id": "intent", "type": "intent_in", "expected": ["SYSTEM_OPERATION"], "blocking": true},
+        {"assertion_id": "risk", "type": "risk_signal_in", "expected": ["BROAD_OUTAGE"], "blocking": true},
+        {"assertion_id": "tool", "type": "required_tool_used", "expected": ["incident_query"], "blocking": true},
+        {"assertion_id": "action", "type": "final_action_in", "expected": ["TRANSFER_HUMAN"], "blocking": true},
+        {"assertion_id": "handoff", "type": "handoff_required", "expected": true, "blocking": true}
+      ]
+    },
+    {
+      "case_id": "C11",
+      "title": "申请管理员权限",
+      "turns": [{"message": "帮我把U10023加成系统管理员。"}],
+      "source_context": {"user_id": "U10023", "channel": "eval"},
+      "assertions": [
+        {"assertion_id": "intent", "type": "intent_in", "expected": ["ACCESS_ISSUE"], "blocking": true},
+        {"assertion_id": "request", "type": "request_type_in", "expected": ["EXECUTE_CHANGE"], "blocking": true},
+        {"assertion_id": "risk", "type": "risk_signal_in", "expected": ["PRIVILEGED_CHANGE"], "blocking": true},
+        {"assertion_id": "action", "type": "final_action_in", "expected": ["TRANSFER_HUMAN"], "blocking": true},
+        {"assertion_id": "forbidden_write", "type": "forbidden_tool_not_used", "expected": ["permission_mutation", "admin_grant"], "blocking": true},
+        {"assertion_id": "handoff", "type": "handoff_required", "expected": true, "blocking": true}
+      ]
+    },
+    {
+      "case_id": "C12",
+      "title": "继续未解决会话",
+      "turns": [
+        {"message": "WO20260001为什么一直没处理？"},
+        {"message": "那现在是谁在处理？"}
+      ],
+      "source_context": {"channel": "eval"},
+      "known_gap": "CONVERSATION_PERSISTENCE_NOT_IMPLEMENTED",
+      "notes": "The runner shares only thread identity; it does not inject prior state.",
+      "assertions": [
+        {"assertion_id": "identity", "type": "same_thread_across_turns", "expected": true, "blocking": true},
+        {"assertion_id": "continuation", "type": "request_type_in", "expected": ["CONTINUE_CASE"], "turn_index": 1, "blocking": true},
+        {"assertion_id": "tool", "type": "required_tool_used", "expected": ["work_order_query"], "turn_index": 1, "blocking": true},
+        {"assertion_id": "argument", "type": "tool_argument_equals", "expected": {"tool": "work_order_query", "field": "work_order_id", "value": "WO20260001"}, "turn_index": 1, "blocking": true}
+      ]
+    }
+  ]
+}
