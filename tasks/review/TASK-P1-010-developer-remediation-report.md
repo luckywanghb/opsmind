@@ -52,7 +52,7 @@ match, fixture value, or work-order-specific key.
 
 ## Validation
 
-- Backend: `612 passed`, `1 deselected`, one dependency deprecation warning.
+- Backend: `616 passed`, `1 deselected`, one dependency deprecation warning.
 - Independent adversarial file plus repository tests: `14 passed`.
 - Ruff: PASS.
 - Mypy: PASS (`56` source files).
@@ -66,3 +66,18 @@ match, fixture value, or work-order-specific key.
 Developer does not self-approve. Independent Tester retest, Reviewer, exact
 reviewed-HEAD CI, and PM Architecture Gate remain required. Merge remains
 prohibited.
+
+## Second remediation cycle
+
+The first remediation retest confirmed both original MAJORs fixed, then found
+one new MAJOR: case-variant keys had equal `(class, source, casefolded-key)`
+rank and stable sort could fall back to input order at the budget boundary.
+
+The ranking now uses the exact key as its final tie-breaker, creating a total
+order for distinct bounded keys. Projection also resolves different long keys
+that truncate to the same 256-character storage key by sorting their complete
+original keys first and selecting deterministically. This remains a generic
+key policy with no case, business object, or fixture branch.
+
+Second-cycle focused attacks and repository tests: `18 passed`. Full backend:
+`616 passed`, `1 deselected`.

@@ -63,7 +63,7 @@ def _bounded_items(values: list[str]) -> list[str]:
 def _important_entities(
     previous: dict[str, str | int | bool], state: OpsAgentState
 ) -> dict[str, str | int | bool]:
-    current: dict[str, str | int | bool] = {}
+    current_candidates: list[tuple[str, str | int | bool, str]] = []
     for key, value in state.understanding.entities.items():
         if not key:
             continue
@@ -73,11 +73,21 @@ def _important_entities(
             value = value.strip()[:512]
             if not value:
                 continue
-        current[key[:256]] = value
+        current_candidates.append((key[:256], value, key))
+
+    # Keys are bounded for checkpoint storage. If different long input keys
+    # share the same bounded prefix, choose a winner by a total lexical order
+    # instead of whichever mapping entry happened to arrive last.
+    current: dict[str, str | int | bool] = {}
+    for bounded_key, value, _original_key in sorted(
+        current_candidates,
+        key=lambda item: (item[2].casefold(), item[2]),
+    ):
+        current.setdefault(bounded_key, value)
 
     def priority(
         item: tuple[str, str | int | bool, int],
-    ) -> tuple[int, int, str]:
+    ) -> tuple[int, int, str, str]:
         key = item[0].casefold()
         # Structured identifiers are P0 continuity anchors regardless of the
         # business object or input mapping order. Current-turn values outrank
@@ -86,6 +96,7 @@ def _important_entities(
             0 if key == "id" or key.endswith("_id") else 1,
             item[2],
             key,
+            item[0],
         )
 
     candidates = [

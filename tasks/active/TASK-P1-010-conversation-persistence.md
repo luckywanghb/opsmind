@@ -70,7 +70,7 @@ continuation.
 
 ## Developer validation snapshot
 
-- Backend after Tester remediation: `612 passed`, `1 deselected`
+- Backend after Tester remediation: `616 passed`, `1 deselected`
   (credential-gated live test).
 - Ruff: PASS.
 - Mypy: PASS (`56` source files).
@@ -91,4 +91,9 @@ continuation.
 - Replaced insertion-order entity truncation with deterministic priority:
   generic structured IDs (`id` / `*_id`) first, current-turn values before
   historical values within a class, then lexical order.
-- Independent Tester evidence was retained; independent retest is pending.
+- First remediation retest: `FAIL`, `BLOCKER=0`, `MAJOR=1`; the original two
+  MAJORs were fixed, but case-variant identifier keys exposed an incomplete
+  tie-breaker.
+- Second remediation adds the exact original key as the final ranking
+  tie-breaker and deterministically resolves bounded-prefix collisions.
+- All independent Tester evidence is retained; second retest is pending.
