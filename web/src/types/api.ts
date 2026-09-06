@@ -86,6 +86,7 @@ export interface ChatHandoff {
 
 export interface ChatResponse {
   request_id: string;
+  run_id: string;
   thread_id: string;
   status: "decision_ready" | "completed" | "waiting_user" | "transferred" | "closed";
   final_status?: string | null;
@@ -102,5 +103,6 @@ export interface ApiErrorEnvelope {
     code: string;
     message: string;
     request_id: string;
+    run_id?: string;
   };
 }

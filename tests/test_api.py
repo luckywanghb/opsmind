@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
+from pathlib import Path
 from uuid import UUID
 
 import httpx
@@ -435,8 +436,15 @@ def test_deepseek_mode_builds_explicit_real_provider_routes(
     assert runtime.gateway.routes[ModelProfile.STRONG].provider == "deepseek"
 
 
-def test_default_mock_runtime_is_reusable() -> None:
-    client = TestClient(create_app(settings=RuntimeSettings(model_provider="mock")))
+def test_default_mock_runtime_is_reusable(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            settings=RuntimeSettings(
+                model_provider="mock",
+                run_store_path=tmp_path / "opsmind.db",
+            )
+        )
+    )
 
     first = client.post("/api/v1/chat", json={"message": "one"})
     second = client.post("/api/v1/chat", json={"message": "two"})
@@ -450,8 +458,15 @@ def test_default_mock_runtime_is_reusable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_concurrent_requests_keep_request_thread_and_trace_isolated() -> None:
-    app = create_app(settings=RuntimeSettings(model_provider="mock"))
+async def test_concurrent_requests_keep_request_thread_and_trace_isolated(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        settings=RuntimeSettings(
+            model_provider="mock",
+            run_store_path=tmp_path / "opsmind.db",
+        )
+    )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,

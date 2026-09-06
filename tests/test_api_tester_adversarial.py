@@ -149,13 +149,14 @@ def assert_error(response: httpx.Response, status: int, code: str) -> None:
     assert response.status_code == status
     body = response.json()
     request_id = body["error"]["request_id"]
-    assert body == {
-        "error": {
-            "code": code,
-            "message": _ERROR_MESSAGES[code],
-            "request_id": request_id,
-        }
+    expected = {
+        "code": code,
+        "message": _ERROR_MESSAGES[code],
+        "request_id": request_id,
     }
+    if "run_id" in body["error"]:
+        expected["run_id"] = body["error"]["run_id"]
+    assert body == {"error": expected}
     assert request_id
     assert response.headers.get("X-Request-ID") == request_id
 

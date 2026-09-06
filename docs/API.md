@@ -1,6 +1,6 @@
 # OpsMind HTTP API
 
-Status: Phase 1 read-only Agent loop
+Status: Phase 2 run persistence foundation over the Phase 1 read-only loop
 
 The API maps one request into the canonical `OpsAgentState`, runs the bounded
 model-driven loop, and returns the terminal outcome plus an actual safe trace.
@@ -12,6 +12,18 @@ The default provider selector is the deterministic mock runtime:
 ```bash
 OPSMIND_MODEL_PROVIDER=mock uv run --frozen uvicorn opsmind.api.app:create_app --factory
 ```
+
+Agent runs are stored locally at `.opsmind/opsmind.db`. Override the location
+without changing the Agent runtime:
+
+```bash
+OPSMIND_RUN_STORE_PATH=/var/tmp/opsmind.db \
+  OPSMIND_MODEL_PROVIDER=mock \
+  uv run --frozen uvicorn opsmind.api.app:create_app --factory
+```
+
+The directory is created on first use. An unsupported existing schema version
+fails explicitly; startup never drops or silently rewrites a database.
 
 Select the real DeepSeek provider explicitly:
 
@@ -66,7 +78,7 @@ Undeclared request fields are rejected.
 
 Successful responses include:
 
-- `request_id` and `thread_id`;
+- independent `request_id`, `run_id`, and `thread_id` values;
 - `status`: `completed`, `waiting_user`, `transferred`, `closed`, or the
   intermediate-compatible `decision_ready` value;
 - validated `understanding` and latest model `decision`;
@@ -82,6 +94,7 @@ Example terminal response shape:
 ```json
 {
   "request_id": "48ff5437-38f4-41b0-9c01-28e3a03ada40",
+  "run_id": "b7506931-7522-4c3d-b828-56b42c639af5",
   "thread_id": "plant-thread-7",
   "status": "completed",
   "final_status": "RESOLVED",
@@ -128,8 +141,33 @@ Example terminal response shape:
 }
 ```
 
-The API does not persist thread state in this phase.  A repeated `thread_id`
-is a correlation value only; it does not restore or mutate a prior run.
+The API persists each execution, not conversation memory. A repeated
+`thread_id` is a correlation value only; it does not restore or mutate a prior
+run. Retrying creates a new request ID and run ID while retaining the supplied
+thread ID.
+
+## Run records
+
+`GET /api/v1/runs?limit=50` returns newest-first summaries. `limit` defaults to
+50 and must be between 1 and 100. A summary includes IDs, persistence
+lifecycle, Agent terminal status, UTC timing, duration, and normalized error.
+
+`GET /api/v1/runs/{run_id}` returns the complete safe run record:
+
+- input and allowlisted source context (`channel`, `user_id`, `site_id`);
+- typed understanding and latest decision for successful runs;
+- ordered safe trace and canonical compact evidence;
+- terminal status, grounded reply, safe handoff, and timing;
+- normalized error code and runtime metadata actually known by the system.
+
+The persistence lifecycle (`STARTED`, `SUCCEEDED`, `FAILED`) is independent
+from the Agent terminal status. For example, `waiting_user` and `transferred`
+are successful Agent executions. Unknown run IDs return `404 RUN_NOT_FOUND`.
+
+The run store is not a raw logging sink. It never stores prompts,
+chain-of-thought, provider payloads, raw model responses, raw tool-result
+objects, tracebacks, exception/database text, credentials, or unallowlisted
+source context.
 
 ## Tool and safety boundary
 
@@ -165,10 +203,14 @@ Errors use one envelope:
   "error": {
     "code": "MODEL_INVOCATION_FAILED",
     "message": "Model invocation failed",
-    "request_id": "b1f23478-408e-411f-873f-b3e38a6bccdb"
+    "request_id": "b1f23478-408e-411f-873f-b3e38a6bccdb",
+    "run_id": "b7506931-7522-4c3d-b828-56b42c639af5"
   }
 }
 ```
+
+`run_id` is present only after the initial run record was created. Request
+validation or initial persistence failure does not claim a durable run ID.
 
 | HTTP | Code | Meaning |
 |---:|---|---|
@@ -176,6 +218,8 @@ Errors use one envelope:
 | 422 | `REQUEST_VALIDATION_FAILED` | Public request contract was invalid. |
 | 502 | `MODEL_INVOCATION_FAILED` | Configured provider invocation failed. |
 | 502 | `MODEL_STRUCTURED_OUTPUT_INVALID` | Model output failed its typed contract. |
+| 503 | `RUN_PERSISTENCE_UNAVAILABLE` | Required run storage could not be completed safely. |
+| 404 | `RUN_NOT_FOUND` | The requested run ID does not exist. |
 | 500 | `INTERNAL_SERVER_ERROR` | Unexpected server failure. |
 
 Error messages exclude prompts, model/provider payloads, source context,
@@ -183,7 +227,7 @@ credentials, adapter data, and internal exception text.
 
 ## Explicit limitations
 
-This phase intentionally has no persistence/checkpoints, authentication,
-thread resume, RAG, external enterprise integration, write tools, approval
-interrupts, or streaming.  DeepSeek live smoke is opt-in and is excluded from
-normal CI.
+This phase intentionally has no conversation checkpoints/thread resume, eval
+runtime or UI, authentication, RAG, external enterprise integration, write
+tools, approval interrupts, retention automation, or streaming. DeepSeek live
+smoke is opt-in and is excluded from normal CI.

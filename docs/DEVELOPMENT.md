@@ -539,3 +539,28 @@ Canonical surfaces:
 The Delivery Reporter is responsible for normalizing these surfaces.
 
 See `docs/REPORTING.md`.
+
+---
+
+# 14. Local run-store development
+
+The HTTP application now persists every validated Agent execution. The default
+database is `.opsmind/opsmind.db`, which is ignored by Git. Use an explicit
+temporary path for tests or disposable local experiments:
+
+```bash
+OPSMIND_RUN_STORE_PATH=/tmp/opsmind-dev.db \
+  OPSMIND_MODEL_PROVIDER=mock \
+  uv run --frozen uvicorn opsmind.api.app:create_app --factory
+```
+
+Tests that construct the application must inject a repository backed by a
+temporary database or set `OPSMIND_RUN_STORE_PATH` to a pytest temporary path.
+Never point tests at the developer's default database. Repository tests should
+cover schema compatibility, lifecycle transitions, atomic finalization,
+concurrent isolation, typed reads, and direct SQLite leakage probes.
+
+Run persistence records one execution for audit and future eval references. It
+does not restore a thread, create a LangGraph checkpoint, or execute an eval.
+Persistence changes require ADR and PM architecture review; ordinary new Agent
+nodes must not execute SQL or import the SQLite repository.
