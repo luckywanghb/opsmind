@@ -63,7 +63,7 @@ def _bounded_items(values: list[str]) -> list[str]:
 def _important_entities(
     previous: dict[str, str | int | bool], state: OpsAgentState
 ) -> dict[str, str | int | bool]:
-    projected = dict(previous)
+    current: dict[str, str | int | bool] = {}
     for key, value in state.understanding.entities.items():
         if not key:
             continue
@@ -73,10 +73,27 @@ def _important_entities(
             value = value.strip()[:512]
             if not value:
                 continue
-        projected[key[:256]] = value
-        if len(projected) >= MAX_IMPORTANT_ENTITIES:
-            break
-    return dict(list(projected.items())[-MAX_IMPORTANT_ENTITIES:])
+        current[key[:256]] = value
+
+    def priority(
+        item: tuple[str, str | int | bool, int],
+    ) -> tuple[int, int, str]:
+        key = item[0].casefold()
+        # Structured identifiers are P0 continuity anchors regardless of the
+        # business object or input mapping order. Current-turn values outrank
+        # historical values within the same priority class.
+        return (
+            0 if key == "id" or key.endswith("_id") else 1,
+            item[2],
+            key,
+        )
+
+    candidates = [
+        *((key, value, 0) for key, value in current.items()),
+        *((key, value, 1) for key, value in previous.items() if key not in current),
+    ]
+    ranked = sorted(candidates, key=priority)
+    return {key: value for key, value, _source in ranked[:MAX_IMPORTANT_ENTITIES]}
 
 
 def _resolution_status(status: TaskStatus | None) -> ResolutionStatus:
@@ -267,9 +284,7 @@ class ConversationPersistenceService:
             last_assistant_message=(
                 _bounded(assistant_content)
                 if assistant_content is not None
-                else (
-                    previous.last_assistant_message if previous is not None else None
-                )
+                else (previous.last_assistant_message if previous is not None else None)
             ),
             latest_run_id=lease.run_id,
             updated_at=now,

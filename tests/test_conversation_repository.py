@@ -12,6 +12,7 @@ import pytest
 from opsmind.conversations import (
     ConversationCheckpoint,
     ConversationConflictError,
+    ConversationDataIntegrityError,
     ConversationIdentityConflictError,
     ConversationLease,
     ConversationPersistenceError,
@@ -186,6 +187,56 @@ def test_cross_thread_isolation_and_identity_fail_closed(tmp_path: Path) -> None
         )
 
 
+def test_begin_normalizes_invalid_domain_identity_to_typed_error(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteConversationRepository(tmp_path / "opsmind.db")
+
+    with pytest.raises(ConversationDataIntegrityError):
+        _begin(repository, user_id="U" * 513)
+
+    assert repository.get("thread-1") is None
+
+
+def test_checkpoint_prioritizes_current_identifiers_at_full_budget(
+    tmp_path: Path,
+) -> None:
+    service = ConversationPersistenceService(
+        SQLiteConversationRepository(tmp_path / "opsmind.db")
+    )
+    lease = service.begin(
+        thread_id="entity-priority",
+        user_id="U1",
+        message="initial",
+        request_id="request-1",
+        run_id="run-1",
+    )
+    state = OpsAgentState(
+        conversation={
+            "thread_id": lease.thread_id,
+            "original_query": "initial",
+            "current_query": "continue",
+        },
+        understanding={
+            "entities": {
+                **{f"auxiliary_{index}": index for index in range(20)},
+                "asset_id": "ASSET-1",
+            }
+        },
+        task={"status": TaskStatus.WAITING_USER},
+    )
+    try:
+        checkpoint = service.checkpoint_for(
+            lease,
+            state=state,
+            assistant_content="continuing",
+        )
+        assert checkpoint.important_entities["asset_id"] == "ASSET-1"
+        assert len(checkpoint.important_entities) == 20
+    finally:
+        service.fail(lease)
+
+
 def test_active_run_rejects_cross_instance_lost_update(tmp_path: Path) -> None:
     path = tmp_path / "opsmind.db"
     first_repository = SQLiteConversationRepository(path)
@@ -231,9 +282,7 @@ async def test_service_serializes_same_thread_but_not_different_threads(
 
 class _FailAssistantRepository(SQLiteConversationRepository):
     @staticmethod
-    def _insert_turn(
-        connection: sqlite3.Connection, turn: ConversationTurn
-    ) -> None:
+    def _insert_turn(connection: sqlite3.Connection, turn: ConversationTurn) -> None:
         if turn.role.value == "ASSISTANT":
             raise sqlite3.OperationalError("TRACEBACK_SECRET_SENTINEL")
         SQLiteConversationRepository._insert_turn(connection, turn)

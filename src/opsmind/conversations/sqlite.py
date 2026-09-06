@@ -125,8 +125,8 @@ def _utc_now() -> datetime:
 
 
 def _utc_text(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat(timespec="microseconds").replace(
-        "+00:00", "Z"
+    return (
+        value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
     )
 
 
@@ -282,9 +282,9 @@ class SQLiteConversationRepository:
             raise ConversationConflictError(
                 "conversation turn conflicts with stored ordering"
             ) from exc
-        except (sqlite3.Error, OSError) as exc:
-            raise ConversationPersistenceError(
-                "conversation start persistence failed"
+        except (sqlite3.Error, OSError, ValidationError, ValueError, TypeError) as exc:
+            raise ConversationDataIntegrityError(
+                "conversation start data is invalid"
             ) from exc
 
     def complete_run(
@@ -527,9 +527,7 @@ class SQLiteConversationRepository:
         return [self._turn(row) for row in rows]
 
     @staticmethod
-    def _insert_turn(
-        connection: sqlite3.Connection, turn: ConversationTurn
-    ) -> None:
+    def _insert_turn(connection: sqlite3.Connection, turn: ConversationTurn) -> None:
         connection.execute(
             """INSERT INTO conversation_turns (
                    turn_id, thread_id, sequence, role, content,

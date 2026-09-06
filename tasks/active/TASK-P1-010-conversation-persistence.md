@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTATION COMPLETE — INDEPENDENT TEST PENDING`
+`REMEDIATED — INDEPENDENT RETEST PENDING`
 
 ## Risk
 
@@ -70,7 +70,8 @@ continuation.
 
 ## Developer validation snapshot
 
-- Backend: `608 passed`, `1 deselected` (credential-gated live test).
+- Backend after Tester remediation: `612 passed`, `1 deselected`
+  (credential-gated live test).
 - Ruff: PASS.
 - Mypy: PASS (`56` source files).
 - Lock: PASS.
@@ -80,3 +81,14 @@ continuation.
   IDs, restored `WO20260001`, classified `CONTINUE_CASE`, reacquired current-run
   `work_order_query` evidence, and returned handler `U10108`.
 - Live DeepSeek: `LIVE_EVAL_NOT_RUN` (`DEEPSEEK_API_KEY` unavailable).
+
+## Independent test cycle
+
+- Initial Tester verdict: `FAIL`, `BLOCKER=0`, `MAJOR=2`.
+- Remediated invalid conversation identity normalization so the surrounding
+  execution service terminates its already-created Run as `FAILED` and returns
+  a sanitized typed persistence error.
+- Replaced insertion-order entity truncation with deterministic priority:
+  generic structured IDs (`id` / `*_id`) first, current-turn values before
+  historical values within a class, then lexical order.
+- Independent Tester evidence was retained; independent retest is pending.
