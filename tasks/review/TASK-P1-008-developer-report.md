@@ -108,3 +108,19 @@ the coordinator-verified result requested for this closeout.
 
 The implementation is ready for independent Tester/Reviewer handoff. Merge
 remains prohibited until the required governance gates pass.
+
+## Post-Tester remediation addendum
+
+The independent Tester report identified six MAJOR findings. They were
+remediated on this Developer branch without changing the frozen Graph, Prompt,
+model-routing, tools, Evidence, grounded-rendering, `READ_ONLY`, Run schema v1,
+or existing API contracts. The remediation adds strict JSON equality,
+canonical `TaskStatus` observation checks, evaluator-specific loader
+validation with turn-index bounds, finite non-recursive suite-depth handling,
+fail-closed run-reference verification, and safe FAILED fallback for terminal
+eval persistence failure.
+
+Details are recorded in
+`tasks/review/TASK-P1-008-developer-remediation-report.md`. The original Tester
+report remains unchanged and the branch remains unpushed and unmerged pending
+independent retest and the PM Architecture Gate.

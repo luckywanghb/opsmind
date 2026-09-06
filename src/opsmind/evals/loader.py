@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from opsmind.evals.models import EvalSuite
+from opsmind.evals.models import EvalSuite, _validate_json_depth
 
 DEFAULT_SUITE_PATH = Path(__file__).resolve().parents[3] / "evals" / "golden-v0.1.json"
 MAX_SUITE_FILE_BYTES = 512 * 1_024
@@ -53,17 +53,23 @@ class EvalSuiteLoader:
     def loads(self, content: str) -> EvalSuite:
         """Parse a JSON string using the same path as file loading."""
 
+        if not isinstance(content, str):
+            raise EvalSuiteLoadError("eval suite content is not text")
         if len(content.encode("utf-8")) > MAX_SUITE_FILE_BYTES:
             raise EvalSuiteLoadError("eval suite content is too large")
         try:
             decoded = json.loads(content)
-        except (json.JSONDecodeError, TypeError, UnicodeError) as exc:
+        except (json.JSONDecodeError, TypeError, UnicodeError, RecursionError) as exc:
             raise EvalSuiteLoadError("eval suite JSON is malformed") from exc
         if not isinstance(decoded, dict):
             raise EvalSuiteLoadError("eval suite root must be an object")
         try:
+            _validate_json_depth(decoded)
+        except (RecursionError, TypeError, ValueError) as exc:
+            raise EvalSuiteLoadError("eval suite JSON is outside safe bounds") from exc
+        try:
             suite = EvalSuite.model_validate(decoded)
-        except ValidationError as exc:
+        except (ValidationError, RecursionError, TypeError, ValueError) as exc:
             raise EvalSuiteLoadError("eval suite schema is invalid") from exc
         registry = self._evaluator_registry
         if registry is None:
@@ -80,6 +86,33 @@ class EvalSuiteLoader:
         )
         if unknown:
             raise EvalSuiteLoadError("eval suite contains an unknown evaluator")
+        validator = getattr(registry, "validate_assertion", None)
+        if callable(validator):
+            try:
+                for case in suite.cases:
+                    for assertion in case.assertions:
+                        if (
+                            assertion.turn_index is not None
+                            and assertion.turn_index >= len(case.turns)
+                        ):
+                            raise ValueError(
+                                "assertion turn index is outside the case turns"
+                            )
+                        validator(assertion, turn_count=len(case.turns))
+            except (TypeError, ValueError, RecursionError) as exc:
+                raise EvalSuiteLoadError(
+                    "eval suite contains an invalid evaluator expectation"
+                ) from exc
+        else:
+            for case in suite.cases:
+                for assertion in case.assertions:
+                    if (
+                        assertion.turn_index is not None
+                        and assertion.turn_index >= len(case.turns)
+                    ):
+                        raise EvalSuiteLoadError(
+                            "eval suite contains an invalid evaluator expectation"
+                        )
         return suite
 
 
