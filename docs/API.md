@@ -149,6 +149,10 @@ run ID while retaining the supplied thread ID.
 
 If a thread is bound to a `user_id`, a later request with a different explicit
 `user_id` fails closed with `409 CONVERSATION_IDENTITY_CONFLICT`. A same-thread
+checkpoint also retains an explicit safe `site_id`; a later different explicit
+`site_id` fails with the same identity-conflict code, while omission restores
+the stored site scope. Arbitrary prior source-context fields are not restored.
+A same-thread
 concurrent mutation is serialized in-process and protected by repository
 ownership/revision checks; a detected peer conflict returns
 `409 CONVERSATION_CONFLICT`.
@@ -293,7 +297,9 @@ credentials, adapter data, and internal exception text.
 
 ## Explicit limitations
 
-This phase intentionally has no conversation checkpoints/thread resume, Eval UI,
-authentication, RAG, external enterprise integration, write tools, approval
-interrupts, retention automation, or streaming. DeepSeek live evaluation is
-opt-in and is excluded from normal CI.
+This phase intentionally has no LangGraph execution checkpoint/resume,
+chat-history UI, authentication, RAG, external enterprise integration, write
+tools, approval interrupts, retention automation, or streaming. Conversation
+continuity uses the typed application-level checkpoint described above, and
+the existing Eval UI remains available. DeepSeek live evaluation is opt-in and
+is excluded from normal CI.

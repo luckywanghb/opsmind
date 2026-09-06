@@ -62,6 +62,14 @@ gives the restored conversation fields to request understanding, while action
 decision receives restored task/fact state and tool result review remains
 current-run-only. Response-plan context is unchanged.
 
+Unresolved questions are P0 and use bounded recency: when the 20-item budget
+is full, newer current-run blockers replace the oldest retained questions.
+Scalar structured identifiers use deterministic priority independent of model
+field order. An explicitly supplied safe `site_id` is retained in the typed
+checkpoint, restored when omitted on a later run, and rejected as an identity
+conflict if a later explicit value differs. Arbitrary source context is never
+carried forward.
+
 No LLM summarizer is introduced: it would add cost, latency, hallucinated
 memory risk, structured-output failures, and a new behavior dependency where
 canonical typed state already supplies a safe projection boundary.

@@ -404,6 +404,9 @@ def test_openapi_exposes_typed_chat_and_error_schemas() -> None:
     assert chat["responses"]["502"]["content"]["application/json"][
         "schema"
     ] == {"$ref": "#/components/schemas/ErrorResponse"}
+    assert chat["responses"]["409"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/ErrorResponse"}
 
 
 def test_runtime_settings_default_to_mock_and_reject_unknown_provider() -> None:

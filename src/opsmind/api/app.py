@@ -206,8 +206,7 @@ def create_app(
     if isinstance(repository_path, (str, Path)):
         conversation_store_path = repository_path
     configured_conversation_repository = (
-        conversation_repository
-        or SQLiteConversationRepository(conversation_store_path)
+        conversation_repository or SQLiteConversationRepository(conversation_store_path)
     )
     app.state.conversation_repository = configured_conversation_repository
     app.state.conversation_persistence = ConversationPersistenceService(
@@ -471,6 +470,7 @@ def create_app(
         response_model=ChatResponse,
         responses={
             400: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
             422: {"model": ErrorResponse},
             500: {"model": ErrorResponse},
             502: {"model": ErrorResponse},

@@ -20,6 +20,7 @@ from opsmind.conversations.models import (
     ConversationThreadDetail,
 )
 from opsmind.conversations.repository import (
+    ConversationIdentityConflictError,
     ConversationNotFoundError,
     ConversationRepository,
 )
@@ -60,6 +61,19 @@ def _bounded_items(values: list[str]) -> list[str]:
     return result
 
 
+def _bounded_recent_items(values: list[str]) -> list[str]:
+    """Keep the most recent unique P0 items while preserving display order."""
+
+    selected: list[str] = []
+    for value in reversed(values):
+        item = _bounded(value)
+        if item is not None and item not in selected:
+            selected.append(item)
+        if len(selected) == MAX_CHECKPOINT_ITEMS:
+            break
+    return list(reversed(selected))
+
+
 def _important_entities(
     previous: dict[str, str | int | bool], state: OpsAgentState
 ) -> dict[str, str | int | bool]:
@@ -74,7 +88,6 @@ def _important_entities(
             if not value:
                 continue
         current_candidates.append((key[:256], value, key))
-
     # Keys are bounded for checkpoint storage. If different long input keys
     # share the same bounded prefix, choose a winner by a total lexical order
     # instead of whichever mapping entry happened to arrive last.
@@ -84,6 +97,12 @@ def _important_entities(
         key=lambda item: (item[2].casefold(), item[2]),
     ):
         current.setdefault(bounded_key, value)
+    if state.identity.site_id is not None:
+        site_id = state.identity.site_id.strip()[:512]
+        if site_id:
+            # Explicit allowlisted identity is authoritative over a model-
+            # inferred entity with the same key.
+            current["site_id"] = site_id
 
     def priority(
         item: tuple[str, str | int | bool, int],
@@ -193,6 +212,25 @@ class ConversationPersistenceService:
 
         checkpoint = lease.context.checkpoint
         thread = lease.context.thread
+        explicit_site_id = source_context.get("site_id")
+        current_site_id = (
+            explicit_site_id if isinstance(explicit_site_id, str) else None
+        )
+        stored_site_id = checkpoint.site_id if checkpoint is not None else None
+        if (
+            stored_site_id is not None
+            and current_site_id is not None
+            and stored_site_id != current_site_id
+        ):
+            raise ConversationIdentityConflictError(
+                "conversation site identity does not match"
+            )
+        site_id = current_site_id or stored_site_id
+        restored_source_context = dict(source_context)
+        if site_id is not None:
+            restored_source_context["site_id"] = site_id
+        if thread.user_id is not None and "user_id" not in restored_source_context:
+            restored_source_context["user_id"] = thread.user_id
         recent_turns = [
             ConversationHistoryItem(
                 role=ConversationHistoryRole(turn.role.value),
@@ -207,12 +245,8 @@ class ConversationPersistenceService:
                     if isinstance(source_context.get("user_id"), str)
                     else thread.user_id
                 ),
-                site_id=(
-                    source_context.get("site_id")
-                    if isinstance(source_context.get("site_id"), str)
-                    else None
-                ),
-                source_context=source_context,
+                site_id=site_id,
+                source_context=restored_source_context,
             ),
             conversation=ConversationState(
                 thread_id=thread.thread_id,
@@ -279,13 +313,14 @@ class ConversationPersistenceService:
         unresolved = (
             []
             if canonical.task.status in {TaskStatus.RESOLVED, TaskStatus.CLOSED}
-            else _bounded_items(canonical.facts.unresolved_questions)
+            else _bounded_recent_items(canonical.facts.unresolved_questions)
         )
         return ConversationCheckpoint(
             thread_id=lease.thread_id,
             revision=lease.revision + 1,
             original_query=lease.context.thread.original_query,
             previous_resolution_status=resolution,
+            site_id=_bounded(canonical.identity.site_id, 512),
             task_objective=_bounded(canonical.task.objective),
             task_constraints=_bounded_items(canonical.task.constraints),
             confirmed_facts=_bounded_items(canonical.facts.confirmed),

@@ -2,7 +2,7 @@
 
 ## Status
 
-`INDEPENDENT TEST PASS — REVIEWER PENDING`
+`REVIEWER REMEDIATED — RE-REVIEW PENDING`
 
 ## Risk
 
@@ -98,3 +98,13 @@ continuation.
   tie-breaker and deterministically resolves bounded-prefix collisions.
 - Second remediation independent verdict: `PASS`, `BLOCKER=0`, `MAJOR=0`,
   `MINOR=0`, `NIT=0`; all prior FAIL reports remain retained.
+
+## Reviewer cycle
+
+- Initial Reviewer verdict on `a1ebf1f`: `REQUEST_CHANGES`, `BLOCKER=0`,
+  `MAJOR=2`, `MINOR=1`, `NIT=1`.
+- Remediation retains recent unresolved P0 blockers at the bounded limit,
+  persists/restores allowlisted `site_id` with fail-closed conflict semantics,
+  corrects the API limitations text, and declares the Chat 409 response in
+  OpenAPI.
+- Reviewer adversarial reproductions pass; independent re-review is pending.

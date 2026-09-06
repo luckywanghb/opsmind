@@ -94,6 +94,7 @@ class ConversationCheckpoint(ConversationModel):
         min_length=1, max_length=MAX_CONVERSATION_CONTENT_LENGTH
     )
     previous_resolution_status: ResolutionStatus
+    site_id: str | None = Field(default=None, max_length=512)
     task_objective: str | None = Field(
         default=None, max_length=MAX_CHECKPOINT_TEXT_LENGTH
     )
@@ -116,14 +117,11 @@ class ConversationCheckpoint(ConversationModel):
     latest_run_id: str = Field(min_length=1, max_length=MAX_CONVERSATION_ID_LENGTH)
     updated_at: datetime
 
-    @field_validator(
-        "task_constraints", "confirmed_facts", "unresolved_questions"
-    )
+    @field_validator("task_constraints", "confirmed_facts", "unresolved_questions")
     @classmethod
     def validate_bounded_text_list(cls, value: list[str]) -> list[str]:
         if any(
-            not item.strip() or len(item) > MAX_CHECKPOINT_TEXT_LENGTH
-            for item in value
+            not item.strip() or len(item) > MAX_CHECKPOINT_TEXT_LENGTH for item in value
         ):
             raise ValueError("checkpoint text list contains an invalid item")
         return value

@@ -237,6 +237,99 @@ def test_checkpoint_prioritizes_current_identifiers_at_full_budget(
         service.fail(lease)
 
 
+def test_checkpoint_retains_recent_unresolved_blocker_at_full_budget(
+    tmp_path: Path,
+) -> None:
+    service = ConversationPersistenceService(
+        SQLiteConversationRepository(tmp_path / "opsmind.db")
+    )
+    lease = service.begin(
+        thread_id="question-priority",
+        user_id="U1",
+        message="initial",
+        request_id="request-1",
+        run_id="run-1",
+    )
+    current_blocker = "current blocker"
+    state = OpsAgentState(
+        conversation={"current_query": "continue"},
+        task={"status": TaskStatus.WAITING_USER},
+        facts={
+            "unresolved_questions": [
+                *[f"older question {index}" for index in range(20)],
+                current_blocker,
+            ]
+        },
+    )
+    try:
+        checkpoint = service.checkpoint_for(
+            lease,
+            state=state,
+            assistant_content="please provide it",
+        )
+        assert current_blocker in checkpoint.unresolved_questions
+        assert "older question 0" not in checkpoint.unresolved_questions
+    finally:
+        service.fail(lease)
+
+
+def test_checkpoint_restores_site_scope_and_rejects_conflict(
+    tmp_path: Path,
+) -> None:
+    service = ConversationPersistenceService(
+        SQLiteConversationRepository(tmp_path / "opsmind.db")
+    )
+    first = service.begin(
+        thread_id="site-scope",
+        user_id="U1",
+        message="initial",
+        request_id="request-1",
+        run_id="run-1",
+    )
+    first_state = service.build_fresh_state(
+        first,
+        message="initial",
+        source_context={"user_id": "U1", "site_id": "SITE-A"},
+    )
+    first_state.understanding.entities["site_id"] = "MODEL-GUESSED-SITE"
+    first_state.task.status = TaskStatus.WAITING_USER
+    service.complete(first, state=first_state, assistant_content="continue")
+
+    second = service.begin(
+        thread_id="site-scope",
+        user_id="U1",
+        message="follow up",
+        request_id="request-2",
+        run_id="run-2",
+    )
+    restored = service.build_fresh_state(
+        second,
+        message="follow up",
+        source_context={"user_id": "U1"},
+    )
+    assert restored.identity.site_id == "SITE-A"
+    assert restored.identity.source_context["site_id"] == "SITE-A"
+    assert restored.conversation.important_entities["site_id"] == "SITE-A"
+    service.fail(second)
+
+    conflicting = service.begin(
+        thread_id="site-scope",
+        user_id="U1",
+        message="different site",
+        request_id="request-3",
+        run_id="run-3",
+    )
+    try:
+        with pytest.raises(ConversationIdentityConflictError):
+            service.build_fresh_state(
+                conflicting,
+                message="different site",
+                source_context={"user_id": "U1", "site_id": "SITE-B"},
+            )
+    finally:
+        service.fail(conflicting)
+
+
 def test_active_run_rejects_cross_instance_lost_update(tmp_path: Path) -> None:
     path = tmp_path / "opsmind.db"
     first_repository = SQLiteConversationRepository(path)

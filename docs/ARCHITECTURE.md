@@ -520,12 +520,17 @@ lost updates. Thread turn ordering uses a contiguous integer `sequence`, never
 timestamps alone.
 
 Checkpoint projection contains only bounded conversation-level state:
-original query, resolution state, task fields, confirmed facts, unresolved
+original query, safe site scope, resolution state, task fields, confirmed facts, unresolved
 questions, deterministic understanding summary, scalar important entities,
 last safe assistant reply, and latest run identity. Full turns remain durable,
 but prompt restoration is bounded. Raw tool results and historical Evidence
 are not restored; P1-006 response planning can reference only current-run
 canonical Evidence.
+
+At capacity, unresolved questions favor the most recent unique blockers.
+Structured identifier entities use a deterministic total order, and an
+explicit later `site_id` that conflicts with the stored thread checkpoint is
+rejected rather than silently replacing scope.
 
 The independent conversation schema version is stored in
 `conversation_schema_metadata`. Persistence failures are fail-closed and safe;
