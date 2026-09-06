@@ -1,6 +1,6 @@
 # TASK-P1-008 Independent Tester Report
 
-## Decision — independent re-test
+## Decision — second independent re-test
 
 `PASS`
 
@@ -13,20 +13,23 @@ NIT: 0
 
 Reviewer Entry Gate: **MET** (`BLOCKER = 0`, `MAJOR = 0`).
 
-This current decision supersedes the initial pre-remediation decision recorded
-below. All 17 retained independent adversarial probes pass on remediation HEAD
-`890f709`; no new Tester finding was identified.
+This current decision supersedes the initial pre-remediation decision and the
+first re-test decision recorded below. All 17 retained independent adversarial
+probes pass on `fedbdce`; the new second-retest probes also pass and no new
+Tester finding was identified.
 
 ## Identity and scope
 
 - Role: Independent Tester / adversarial regression pass
 - Baseline product commit (initial test): `005e489740ce00f1f5d366323b1ad48e141a6e11`
 - Initial implementation commit: `0b01dda`
-- Re-test product commit: `890f709b4ad72f2cabf8a53b8b04486e1a9c69bd`
+- First re-test product commit: `890f709b4ad72f2cabf8a53b8b04486e1a9c69bd`
+- Second re-test product commit: `fedbdce`
 - Base main: `e0e0675d6c638401d91643aa546bb106b3188dca`
 - Tester branch: `task/TASK-P1-008-test`
 - Product source/frontend/dependency files modified by Tester: no
-- Tester-only additions: `tests/test_p1_008_independent_adversarial.py` and this report
+- Tester-only additions: `tests/test_p1_008_independent_adversarial.py`,
+  `tests/test_p1_008_second_retest.py`, and this report
 
 The probes were written independently of the Developer-authored eval tests.
 No prompt, tool, RAG, conversation, or frontend product behavior was changed.
@@ -223,7 +226,7 @@ Do not return TASK-P1-008 to Reviewer. The Reviewer Entry Gate requires
 PM Architecture Gate: **PENDING** per `docs/adr/ADR-004-eval-runtime.md`.
 Merge/push: **PROHIBITED** for this Tester task.
 
-## Re-test at remediation HEAD
+## First re-test at remediation HEAD
 
 ### Re-test scope and result
 
@@ -286,6 +289,78 @@ MAJOR = 0
 MINOR = 0
 NIT = 0
 Reviewer Entry Gate = MET
+```
+
+PM Architecture Gate remains **PENDING** per
+`docs/adr/ADR-004-eval-runtime.md`. Merge/push remain **PROHIBITED** for this
+Tester task.
+
+## Second re-test at Reviewer remediation HEAD
+
+### Scope and result
+
+The second independent Tester pass ran against product HEAD `fedbdce`
+(`bad1225` on the Developer branch). It did not rely on the Developer's
+reported `582 passed` result. The prior 17 adversarial tests were re-run first,
+then a new Tester-only probe file independently exercised the four Reviewer
+MAJORs. No product `src` or Golden Suite file was modified by the Tester.
+
+### Reviewer MAJOR closure matrix
+
+| Reviewer finding | Independent closure evidence |
+| --- | --- |
+| MAJOR-1 — Fresh-process import cycle | Three fresh subprocess import orders, including direct `from opsmind.execution import AgentExecutionService` and eval-first imports, all exit successfully. Probe: `tests/test_p1_008_second_retest.py:159-187`. |
+| MAJOR-2 — Oversized valid tool arguments changing Chat/Run success | Direct `AgentExecutionService` and `POST /api/v1/chat` probes use a 600-character valid tool argument. Both return success and persist `RunLifecycleStatus.SUCCEEDED`; the eval projection contains no sentinel and records bounded `TOOL_ARGUMENTS_UNAVAILABLE`. Probes: `tests/test_p1_008_second_retest.py:98-156`. |
+| MAJOR-3 — Invalid evaluator return and incomplete matrix | A registered evaluator returning an invalid object produces Case `ERROR` while the Job is `COMPLETED`, with its private sentinel absent. An explicit matrix covers all 18 registry evaluators across PASS, quality-mismatch FAIL, and unavailable-observation ERROR outcomes (54 outcome checks). Probes: `tests/test_p1_008_second_retest.py:238-300` and `:426-467`. |
+| MAJOR-4 — Missing C05/C06 blocking truths | The backend `0.1` suite exposes blocking C05 `current_handler=U10108`, C05 `waiting_hours=4`, and C06 `request_type=DIAGNOSE`; independently correct values PASS and wrong handler, duration, and request type FAIL. Probe: `tests/test_p1_008_second_retest.py:470-510`. |
+
+### Second re-test validation evidence
+
+```text
+../opsmind-p1-007/.venv/bin/python -m pytest -q \
+  tests/test_p1_008_independent_adversarial.py
+→ 17 passed, 1 warning
+
+../opsmind-p1-007/.venv/bin/python -m pytest -q \
+  tests/test_p1_008_independent_adversarial.py \
+  tests/test_p1_008_second_retest.py
+→ 25 passed, 1 warning
+
+../opsmind-p1-007/.venv/bin/python -m pytest
+→ 590 passed, 1 deselected, 1 warning
+
+../opsmind-p1-007/.venv/bin/ruff check .
+→ PASS
+
+../opsmind-p1-007/.venv/bin/mypy src
+→ Success: no issues found in 51 source files
+
+UV_CACHE_DIR=/private/tmp/opsmind-p1-008-second-retest-uv uv lock --check
+→ Resolved 55 packages; PASS
+
+git diff --check
+→ PASS
+
+DEEPSEEK_API_KEY
+→ absent; LIVE_EVAL_NOT_RUN
+```
+
+The only test warning is the pre-existing Starlette `TestClient`/`httpx`
+deprecation warning. Frontend code was not changed in this remediation; no
+push or merge was performed.
+
+### Final second-retest gate decision
+
+The four Reviewer MAJORs are independently closed. Reviewer re-entry remains
+approved from the Tester perspective:
+
+```text
+Decision: PASS
+BLOCKER: 0
+MAJOR: 0
+MINOR: 0
+NIT: 0
+Reviewer Entry Gate: MET
 ```
 
 PM Architecture Gate remains **PENDING** per
