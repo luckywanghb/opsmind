@@ -40,7 +40,7 @@
 
 ## Validation
 
-- Backend: `627 passed`, `1 deselected` (credential-gated), one dependency
+- Backend: `629 passed`, `1 deselected` (credential-gated), one dependency
   deprecation warning.
 - Frontend: `41 passed`; lint PASS; production build PASS.
 - Browser: PASS on real FastAPI + Vite deterministic two-turn flow.
@@ -52,7 +52,11 @@
 
 ## Independent gates
 
-- Tester: `PASS`; BLOCKER 0 / MAJOR 0 / MINOR 0 / NIT 0.
+- Final Independent Tester: `PASS`; BLOCKER 0 / MAJOR 0 / MINOR 0 / NIT 0.
+  It explicitly validated Product SHA
+  `046eade22ce1fe5b7cf777aaa20e26e3077f4b29` against current PR tree
+  `366f777a72fa523ffc72a0270b0d98ac18734187`, proved no intervening product
+  change, passed 153 focused tests and the 629-test full backend suite.
 - Sol Medium Reviewer: `APPROVE`; BLOCKER 0 / MAJOR 0 / MINOR 0 / NIT 0.
 
 ## Known limitations
@@ -75,7 +79,7 @@
 
 ## PM Architecture Gate
 
-`PENDING`
+`HOLD REMEDIATION SUPPLIED — AWAITING PM FINAL DECISION`
 
 ## Merge
 

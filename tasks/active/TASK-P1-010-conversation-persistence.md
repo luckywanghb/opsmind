@@ -2,7 +2,7 @@
 
 ## Status
 
-`READY FOR PM ARCHITECTURE GATE — MERGE PROHIBITED`
+`FINAL TESTER PASS — RETURNED TO PM FINAL GATE`
 
 ## Risk
 
@@ -120,3 +120,20 @@ continuation.
   `NIT=0`, Reviewed HEAD `362468d81de9895632e351acea20a782c9476901`.
 - Exact Reviewed-HEAD Python and Web CI: PASS.
 - PM Architecture Gate: `PENDING`; PR remains Draft and unmerged.
+
+## PM HOLD remediation
+
+- PM decision: `HOLD — FINAL TESTER EVIDENCE REQUIRED`; architecture was
+  approvable and no product remediation was requested.
+- Final Independent Tester explicitly validated Product SHA
+  `046eade22ce1fe5b7cf777aaa20e26e3077f4b29` against PR tree `366f777`.
+- It proved the intervening committed diff contained only delivery artifacts,
+  then ran all P1-010 adversarial and regression gates.
+- Final Tester: `PASS`, `BLOCKER=0`, `MAJOR=0`, `MINOR=0`, `NIT=0`;
+  focused `153 passed`, full backend `629 passed, 1 deselected`, frontend and
+  all static/lock/diff gates PASS.
+- A second independent Tester execution corroborated `PASS 0/0/0/0` without
+  modifying product code or the formal report.
+- Existing Sol Medium Reviewer approval remains valid because no product
+  implementation changed after `046eade`.
+- Returned directly to PM Final Gate. PR remains Draft and merge prohibited.
