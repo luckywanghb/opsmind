@@ -561,6 +561,8 @@ cover schema compatibility, lifecycle transitions, atomic finalization,
 concurrent isolation, typed reads, and direct SQLite leakage probes.
 
 Run persistence records one execution for audit and future eval references. It
-does not restore a thread, create a LangGraph checkpoint, or execute an eval.
-Persistence changes require ADR and PM architecture review; ordinary new Agent
-nodes must not execute SQL or import the SQLite repository.
+does not restore a thread or create a LangGraph checkpoint. The P1-008 eval
+runtime is a separate backend harness that invokes the same execution service;
+it does not execute inside the graph. Persistence changes require ADR and PM
+architecture review; ordinary new Agent nodes must not execute SQL or import
+the SQLite repository.

@@ -1,6 +1,7 @@
 # OpsMind HTTP API
 
-Status: Phase 2 run persistence foundation over the Phase 1 read-only loop
+Status: Phase 2 run persistence and backend eval runtime over the Phase 1
+read-only loop
 
 The API maps one request into the canonical `OpsAgentState`, runs the bounded
 model-driven loop, and returns the terminal outcome plus an actual safe trace.
@@ -169,6 +170,43 @@ chain-of-thought, provider payloads, raw model responses, raw tool-result
 objects, tracebacks, exception/database text, credentials, or unallowlisted
 source context.
 
+## Evaluation
+
+The backend owns the typed Golden Suite at `evals/golden-v0.1.json`. It contains
+the eight V0.1 cases and is loaded and integrity-checked before a job is
+created. The API accepts only a backend-known `suite_id`; callers cannot
+submit arbitrary cases, prompts, provider settings, or evaluator code.
+
+```text
+POST /api/v1/evals/run
+GET  /api/v1/evals?limit=20
+GET  /api/v1/evals/{eval_job_id}
+```
+
+Start a suite run:
+
+```json
+{"suite_id": "opsmind-golden"}
+```
+
+Every turn goes through the same execution service as Chat, with a fresh
+request ID and real persisted `AgentRun`. Turns in one case share a generated
+thread ID; separate cases do not. The runner does not restore prior state for
+C12, so that case reports the current conversation-persistence limitation
+honestly.
+
+The returned job has lifecycle `STARTED`, `COMPLETED`, or `FAILED`; each case
+has quality status `PASS`, `FAIL`, or `ERROR`. A completed job means the suite
+infrastructure completed, not that every case passed. Deterministic
+assertions inspect safe typed observations (not answer-text matching or an
+LLM judge). `known_gap` is explanatory metadata only.
+
+Eval rows use independent `eval_schema_metadata` version 1 and eval tables in
+the same SQLite file. The existing Run schema remains version 1 and is not
+modified. Eval persistence stores assertion results and real run links, not
+prompts, hidden reasoning, provider payloads, raw tool results, tracebacks,
+credentials, or arbitrary source context.
+
 ## Tool and safety boundary
 
 The current registry contains three synthetic typed read-only tools:
@@ -227,7 +265,7 @@ credentials, adapter data, and internal exception text.
 
 ## Explicit limitations
 
-This phase intentionally has no conversation checkpoints/thread resume, eval
-runtime or UI, authentication, RAG, external enterprise integration, write
-tools, approval interrupts, retention automation, or streaming. DeepSeek live
-smoke is opt-in and is excluded from normal CI.
+This phase intentionally has no conversation checkpoints/thread resume, Eval UI,
+authentication, RAG, external enterprise integration, write tools, approval
+interrupts, retention automation, or streaming. DeepSeek live evaluation is
+opt-in and is excluded from normal CI.

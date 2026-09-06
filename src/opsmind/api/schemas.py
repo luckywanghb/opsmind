@@ -56,6 +56,19 @@ class ChatRequest(ApiModel):
         return value
 
 
+class EvalRunRequest(ApiModel):
+    """Input accepted by the synchronous Golden Suite endpoint."""
+
+    suite_id: str = Field(min_length=1, max_length=128)
+
+    @field_validator("suite_id")
+    @classmethod
+    def reject_blank_suite_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("suite_id must not be blank")
+        return value
+
+
 class ChatUnderstanding(ApiModel):
     """Validated request understanding returned by the kernel."""
 

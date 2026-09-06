@@ -24,6 +24,7 @@ from opsmind.agent.context import (
 )
 from opsmind.agent.errors import AgentError, AgentInputError
 from opsmind.agent.graph import (
+    AgentToolCall,
     AgentTraceEvent,
     build_ops_graph,
     run_ops_agent,
@@ -87,6 +88,7 @@ __all__ = [
     "AgentError",
     "AgentInputError",
     "AgentTraceEvent",
+    "AgentToolCall",
     "ACTION_DECISION_PROMPT",
     "ACTION_DECISION_SYSTEM_PROMPT",
     "BOUNDED_ANSWER_POLICY",

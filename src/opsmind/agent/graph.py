@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from pydantic import JsonValue
 
 from opsmind.agent.diagnostics import attach_structured_node_diagnostic
 from opsmind.agent.grounding import GroundingValidationError
@@ -76,6 +77,20 @@ class AgentTraceEvent:
         # supplied as a summary.  Bound it at the event boundary so every
         # caller (API or in-process) receives the same safe projection.
         object.__setattr__(self, "summary", bounded_trace_summary(self.summary))
+
+
+@dataclass(frozen=True, slots=True)
+class AgentToolCall:
+    """Safe metadata for one validated tool attempt.
+
+    The record intentionally contains no adapter output.  Arguments have
+    already passed the registered request schema before this boundary.
+    """
+
+    tool_name: str
+    arguments: dict[str, JsonValue]
+    status: str
+    error_code: str | None = None
 
 
 OpsGraph = CompiledStateGraph[OpsAgentState, None, OpsAgentState, OpsAgentState]
@@ -204,6 +219,7 @@ def build_ops_graph(
     tool_registry: ToolRegistry | None = None,
     *,
     trace_events: list[AgentTraceEvent] | None = None,
+    tool_calls: list[AgentToolCall] | None = None,
 ) -> OpsGraph:
     """Build one dependency-injected, bounded Agent-loop graph.
 
@@ -214,8 +230,23 @@ def build_ops_graph(
 
     registry = (tool_registry or build_default_tool_registry()).copy()
     events = trace_events if trace_events is not None else []
+    observed_tool_calls = tool_calls if tool_calls is not None else []
     execution_results: list[ToolInvocationResult] = []
     executed_signatures: set[str] = set()
+
+    def record_tool_call(
+        tool_name: str,
+        arguments: Mapping[str, JsonValue],
+        execution: ToolInvocationResult,
+    ) -> None:
+        observed_tool_calls.append(
+            AgentToolCall(
+                tool_name=tool_name,
+                arguments=dict(arguments),
+                status=execution.status,
+                error_code=execution.error_code,
+            )
+        )
 
     builder = StateGraph(OpsAgentState)
 
@@ -333,6 +364,7 @@ def build_ops_graph(
                     error_code="DUPLICATE_TOOL_CALL",
                 )
                 execution_results.append(execution)
+                record_tool_call(selected_tool, canonical.tool.arguments, execution)
                 events.append(
                     AgentTraceEvent(
                         node="execute_tool",
@@ -382,6 +414,7 @@ def build_ops_graph(
                         ),
                     )
                     execution_results.append(execution)
+                    record_tool_call(selected_tool, canonical.tool.arguments, execution)
                     events.append(
                         AgentTraceEvent(
                             node="execute_tool",
@@ -415,6 +448,8 @@ def build_ops_graph(
                     }
 
         execution_results.append(execution)
+        if selected_tool is not None:
+            record_tool_call(selected_tool, canonical.tool.arguments, execution)
         next_retry_count = canonical.loop.retry_count + (
             1 if execution.error_code else 0
         )
@@ -675,16 +710,19 @@ async def run_ops_agent_with_trace(
     tool_registry: ToolRegistry | None = None,
     *,
     trace_events: list[AgentTraceEvent] | None = None,
+    tool_calls: list[AgentToolCall] | None = None,
 ) -> tuple[OpsAgentState, tuple[AgentTraceEvent, ...]]:
     """Run one isolated graph invocation and return safe actual events."""
 
     canonical_state = OpsAgentState.model_validate(state)
     events = trace_events if trace_events is not None else []
+    observed_tool_calls = tool_calls if tool_calls is not None else []
     registry = tool_registry or build_default_tool_registry()
     graph = build_ops_graph(
         gateway,
         tool_registry=registry,
         trace_events=events,
+        tool_calls=observed_tool_calls,
     )
     result = await graph.ainvoke(canonical_state.model_copy(deep=True))
     return OpsAgentState.model_validate(result), tuple(events)
@@ -703,6 +741,7 @@ async def run_ops_agent(
 
 __all__ = [
     "AgentTraceEvent",
+    "AgentToolCall",
     "OpsGraph",
     "build_ops_graph",
     "run_ops_agent",

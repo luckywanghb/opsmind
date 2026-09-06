@@ -1,6 +1,6 @@
 # OpsMind Architecture — V0.1
 
-Status: TASK-P1-007 architecture accepted — PM gate approved 2026-09-06
+Status: TASK-P1-007 and TASK-P1-008 architectures accepted — PM gates approved 2026-09-06
 Architecture style: Model-first Agent + deterministic harness  
 Primary Agent runtime: LangGraph  
 Business environment: Fully synthetic manufacturing IT environment
@@ -492,8 +492,8 @@ and arbitrary source context are outside the persistence boundary.
 Persistence fails closed: an initial write failure prevents Agent execution,
 and terminal write failure prevents a success response. SQLite is a local
 implementation and can be replaced behind the repository contract. This
-architecture is neither conversation memory/checkpointing, eval execution,
-nor raw tracing. See ADR-003.
+run-persistence boundary is separate from conversation memory/checkpointing and
+the backend eval runtime; it is not raw tracing. See ADR-003 and ADR-004.
 
 ---
 

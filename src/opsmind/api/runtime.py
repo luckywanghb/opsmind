@@ -7,7 +7,12 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from opsmind.agent import AgentTraceEvent, run_ops_agent, run_ops_agent_with_trace
+from opsmind.agent import (
+    AgentToolCall,
+    AgentTraceEvent,
+    run_ops_agent,
+    run_ops_agent_with_trace,
+)
 from opsmind.models import (
     ModelGateway,
     ModelProvider,
@@ -35,6 +40,7 @@ class AgentRunResult:
     state: OpsAgentState
     invocations: tuple[CompletedInvocation, ...]
     events: tuple[AgentTraceEvent, ...] = ()
+    tool_calls: tuple[AgentToolCall, ...] = ()
 
 
 class _RecordingProvider:
@@ -77,6 +83,7 @@ class _RecordingProvider:
         )
         return response
 
+
 class OpsAgentRuntime:
     """Own the injected gateway and invoke the canonical Agent entry point."""
 
@@ -108,6 +115,7 @@ class OpsAgentRuntime:
 
         records: list[CompletedInvocation] = []
         events: list[AgentTraceEvent] = []
+        tool_calls: list[AgentToolCall] = []
         traced_providers = {
             name: _RecordingProvider(provider, records)
             for name, provider in self._gateway.providers.items()
@@ -122,6 +130,7 @@ class OpsAgentRuntime:
                 traced_gateway,
                 self._tool_registry,
                 trace_events=events,
+                tool_calls=tool_calls,
             )
         except Exception as exc:
             # This request-local attribute contains only the same safe events
@@ -134,4 +143,5 @@ class OpsAgentRuntime:
             state=result,
             invocations=tuple(records),
             events=completed_events,
+            tool_calls=tuple(tool_calls),
         )
