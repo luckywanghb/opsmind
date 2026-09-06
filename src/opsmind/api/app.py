@@ -28,6 +28,17 @@ from opsmind.api.schemas import (
     HealthResponse,
 )
 from opsmind.api.settings import RuntimeSettings
+from opsmind.conversations import (
+    ConversationConflictError,
+    ConversationIdentityConflictError,
+    ConversationNotFoundError,
+    ConversationPersistenceError,
+    ConversationPersistenceService,
+    ConversationRepository,
+    ConversationThread,
+    ConversationThreadDetail,
+    SQLiteConversationRepository,
+)
 from opsmind.evals import (
     EvalJob,
     EvalJobSummary,
@@ -121,6 +132,12 @@ def _execution_dependency(request: Request) -> AgentExecutionService:
     return cast(AgentExecutionService, request.app.state.execution_service)
 
 
+def _conversation_dependency(request: Request) -> ConversationPersistenceService:
+    return cast(
+        ConversationPersistenceService, request.app.state.conversation_persistence
+    )
+
+
 def _eval_runner_dependency(request: Request) -> EvalRunner:
     return cast(EvalRunner, request.app.state.eval_runner)
 
@@ -164,6 +181,7 @@ def create_app(
     runtime: OpsAgentRuntime | None = None,
     settings: RuntimeSettings | None = None,
     run_repository: RunRepository | None = None,
+    conversation_repository: ConversationRepository | None = None,
     eval_repository: EvalRepository | None = None,
     eval_suite_loader: EvalSuiteLoader | None = None,
     eval_runner: EvalRunner | None = None,
@@ -183,10 +201,22 @@ def create_app(
         app_version=app.version,
         build_sha=configured_settings.build_sha,
     )
+    conversation_store_path: str | Path = configured_settings.run_store_path
+    repository_path = getattr(configured_repository, "path", None)
+    if isinstance(repository_path, (str, Path)):
+        conversation_store_path = repository_path
+    configured_conversation_repository = (
+        conversation_repository or SQLiteConversationRepository(conversation_store_path)
+    )
+    app.state.conversation_repository = configured_conversation_repository
+    app.state.conversation_persistence = ConversationPersistenceService(
+        configured_conversation_repository
+    )
     app.state.execution_service = AgentExecutionService(
         configured_runtime,
         app.state.run_persistence,
         state_factory=OpsAgentState,
+        conversation_persistence=app.state.conversation_persistence,
     )
     eval_store_path: str | Path = configured_settings.run_store_path
     repository_path = getattr(configured_repository, "path", None)
@@ -268,6 +298,64 @@ def create_app(
             status_code=503,
             code="RUN_PERSISTENCE_UNAVAILABLE",
             message="Agent run persistence is unavailable",
+        )
+
+    @app.exception_handler(ConversationNotFoundError)
+    async def conversation_not_found_handler(
+        request: Request,
+        exc: ConversationNotFoundError,
+    ) -> JSONResponse:
+        del exc
+        return _error_response(
+            request,
+            status_code=404,
+            code="CONVERSATION_NOT_FOUND",
+            message="Conversation thread was not found",
+        )
+
+    @app.exception_handler(ConversationIdentityConflictError)
+    async def conversation_identity_handler(
+        request: Request,
+        exc: ConversationIdentityConflictError,
+    ) -> JSONResponse:
+        del exc
+        return _error_response(
+            request,
+            status_code=409,
+            code="CONVERSATION_IDENTITY_CONFLICT",
+            message="Conversation identity does not match",
+        )
+
+    @app.exception_handler(ConversationConflictError)
+    async def conversation_conflict_handler(
+        request: Request,
+        exc: ConversationConflictError,
+    ) -> JSONResponse:
+        del exc
+        return _error_response(
+            request,
+            status_code=409,
+            code="CONVERSATION_CONFLICT",
+            message="Conversation thread has a conflicting update",
+        )
+
+    @app.exception_handler(ConversationPersistenceError)
+    async def conversation_persistence_handler(
+        request: Request,
+        exc: ConversationPersistenceError,
+    ) -> JSONResponse:
+        LOGGER.error(
+            "conversation_persistence_unavailable request_id=%s run_id=%s "
+            "error_type=%s",
+            _request_id(request),
+            getattr(request.state, "run_id", "-"),
+            type(exc).__name__,
+        )
+        return _error_response(
+            request,
+            status_code=503,
+            code="CONVERSATION_PERSISTENCE_UNAVAILABLE",
+            message="Conversation persistence is unavailable",
         )
 
     @app.exception_handler(EvalSuiteLoadError)
@@ -382,6 +470,7 @@ def create_app(
         response_model=ChatResponse,
         responses={
             400: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
             422: {"model": ErrorResponse},
             500: {"model": ErrorResponse},
             502: {"model": ErrorResponse},
@@ -414,8 +503,46 @@ def create_app(
             if isinstance(run_id, str):
                 request.state.run_id = run_id
             raise
+        except ConversationPersistenceError as exc:
+            run_id = getattr(exc, "run_id", None)
+            if isinstance(run_id, str):
+                request.state.run_id = run_id
+            raise
         request.state.run_id = result.run_id
         return result.response
+
+    @app.get(
+        "/api/v1/threads",
+        response_model=list[ConversationThread],
+        responses={503: {"model": ErrorResponse}},
+        tags=["conversations"],
+    )
+    async def list_threads(
+        conversation_service: Annotated[
+            ConversationPersistenceService,
+            Depends(_conversation_dependency),
+        ],
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> list[ConversationThread]:
+        return conversation_service.list(limit=limit)
+
+    @app.get(
+        "/api/v1/threads/{thread_id}",
+        response_model=ConversationThreadDetail,
+        responses={404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+        tags=["conversations"],
+    )
+    async def get_thread(
+        conversation_service: Annotated[
+            ConversationPersistenceService,
+            Depends(_conversation_dependency),
+        ],
+        thread_id: Annotated[
+            str,
+            PathParameter(min_length=1, max_length=128),
+        ],
+    ) -> ConversationThreadDetail:
+        return conversation_service.get(thread_id)
 
     @app.get(
         "/api/v1/runs",

@@ -23,6 +23,11 @@ from opsmind.api.schemas import (
     ChatResponse,
     ChatUnderstanding,
 )
+from opsmind.conversations import (
+    ConversationLease,
+    ConversationPersistenceError,
+    ConversationPersistenceService,
+)
 from opsmind.evals.models import (
     EvaluationObservation,
     EvaluationObservationErrorCode,
@@ -33,7 +38,6 @@ from opsmind.state import (
     AgentAction,
     DecisionState,
     HandoffState,
-    IdentityState,
     LoopState,
     OpsAgentState,
     TaskStatus,
@@ -295,11 +299,13 @@ class AgentExecutionService:
         runtime: OpsAgentRuntime,
         persistence: RunPersistenceService,
         *,
+        conversation_persistence: ConversationPersistenceService,
         state_factory: Callable[..., OpsAgentState] | None = None,
     ) -> None:
         self._runtime = runtime
         self._persistence = persistence
         self._state_factory = state_factory or OpsAgentState
+        self._conversation_persistence = conversation_persistence
 
     @property
     def runtime(self) -> OpsAgentRuntime:
@@ -313,7 +319,25 @@ class AgentExecutionService:
         request_id: str,
         thread_id: str,
     ) -> AgentExecutionResult:
-        """Run the canonical kernel and atomically finalize its real run."""
+        """Run the canonical kernel and finalize its run and conversation."""
+
+        async with self._conversation_persistence.serialized(thread_id):
+            return await self._execute_serialized(
+                message=message,
+                source_context=source_context,
+                request_id=request_id,
+                thread_id=thread_id,
+            )
+
+    async def _execute_serialized(
+        self,
+        *,
+        message: str,
+        source_context: Mapping[str, JsonValue],
+        request_id: str,
+        thread_id: str,
+    ) -> AgentExecutionResult:
+        """Execute while the conversation thread is exclusively held."""
 
         active = self._persistence.start(
             request_id=request_id,
@@ -321,27 +345,36 @@ class AgentExecutionService:
             input_message=message,
             source_context=source_context,
         )
+        conversation = self._conversation_persistence
+        lease: ConversationLease
         try:
-            state = self._state_factory(
-                identity=IdentityState(
-                    user_id=(
-                        source_context.get("user_id")
-                        if isinstance(source_context.get("user_id"), str)
-                        else None
-                    ),
-                    site_id=(
-                        source_context.get("site_id")
-                        if isinstance(source_context.get("site_id"), str)
-                        else None
-                    ),
-                    source_context=dict(source_context),
-                ),
-                conversation={
-                    "thread_id": thread_id,
-                    "original_query": message,
-                    "current_query": message,
-                },
+            raw_user_id = source_context.get("user_id")
+            raw_site_id = source_context.get("site_id")
+            lease = conversation.begin(
+                thread_id=thread_id,
+                user_id=raw_user_id if isinstance(raw_user_id, str) else None,
+                site_id=raw_site_id if isinstance(raw_site_id, str) else None,
+                message=message,
+                request_id=request_id,
+                run_id=active.run_id,
             )
+        except ConversationPersistenceError as exc:
+            try:
+                self._persistence.fail(
+                    active,
+                    error_code=normalized_error_code(exc),
+                )
+            except RunPersistenceError as persistence_error:
+                raise persistence_error from None
+            exc.__dict__["run_id"] = active.run_id
+            raise
+        try:
+            restored_state = conversation.build_fresh_state(
+                lease,
+                message=message,
+                source_context=dict(source_context),
+            )
+            state = self._state_factory(**restored_state.model_dump())
             result = await self._runtime.run_with_trace(state)
             response = chat_response_from_result(
                 result,
@@ -364,6 +397,11 @@ class AgentExecutionService:
                 )
             except RunPersistenceError as persistence_error:
                 raise persistence_error from None
+            try:
+                conversation.fail(lease)
+            except ConversationPersistenceError as persistence_error:
+                persistence_error.__dict__["run_id"] = active.run_id
+                raise persistence_error from None
             raise AgentExecutionError(
                 run_id=active.run_id,
                 request_id=request_id,
@@ -376,8 +414,28 @@ class AgentExecutionService:
         try:
             persist_chat_success(self._persistence, active, response)
         except RunPersistenceError as exc:
+            try:
+                conversation.fail(lease)
+            except ConversationPersistenceError:
+                pass
             # The API can return the real run identity while preserving the
             # generic persistence error envelope.
+            exc.__dict__["run_id"] = active.run_id
+            raise
+        assistant_content = response.final_reply
+        if assistant_content is not None and not assistant_content.strip():
+            assistant_content = None
+        try:
+            conversation.complete(
+                lease,
+                state=result.state,
+                assistant_content=assistant_content,
+            )
+        except ConversationPersistenceError as exc:
+            try:
+                conversation.fail(lease)
+            except ConversationPersistenceError:
+                pass
             exc.__dict__["run_id"] = active.run_id
             raise
         return AgentExecutionResult(

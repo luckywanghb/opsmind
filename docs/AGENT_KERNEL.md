@@ -112,8 +112,14 @@ retry/loop limits.
 
 ## Current limitations
 
-This task remains an in-memory single-Agent runtime.  It intentionally adds
-no persistence/checkpoints, thread resume, RAG, external enterprise
-integration, write actions, approval interrupts, authentication, or streaming.
-The three synthetic adapters are fixtures for the generic registry and can be
-replaced or extended by registration without semantic graph branches.
+The graph remains a fresh single-Agent execution for every request. The
+application harness now restores a typed conversation checkpoint and at most
+six recent turns before graph execution; it does not resume a LangGraph
+checkpoint or restore previous loop/tool/decision/evidence state. Historical
+conversation can guide understanding and planning but never enters current-run
+Evidence or the grounded renderer.
+
+The runtime intentionally adds no RAG, external enterprise integration, write
+actions, approval interrupts, authentication platform, long-term user memory,
+LLM summarizer, or streaming. The three synthetic adapters remain generic
+registry fixtures.

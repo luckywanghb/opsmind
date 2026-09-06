@@ -17,6 +17,10 @@ from opsmind.agent.graph import AgentToolCall
 from opsmind.agent.schemas import ActionDecisionOutput, RequestUnderstandingOutput
 from opsmind.api.app import create_app
 from opsmind.api.runtime import AgentRunResult, OpsAgentRuntime
+from opsmind.conversations import (
+    ConversationPersistenceService,
+    SQLiteConversationRepository,
+)
 from opsmind.evals import (
     CaseEvaluationContext,
     EvalAssertion,
@@ -105,6 +109,9 @@ async def test_long_valid_tool_argument_preserves_success_and_bounded_eval_proje
     execution = AgentExecutionService(
         cast(OpsAgentRuntime, runtime),
         RunPersistenceService(repository, app_version="second-retest"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(repository.path)
+        ),
     )
 
     result = await execution.execute(
@@ -274,6 +281,9 @@ async def test_invalid_evaluator_return_is_case_error_but_job_completes(
             ]
         ),
         RunPersistenceService(run_repository, app_version="second-retest"),
+        conversation_persistence=ConversationPersistenceService(
+            SQLiteConversationRepository(run_repository.path)
+        ),
     )
     eval_repository = SQLiteEvalRepository(database_path)
     persistence = EvalPersistenceService(

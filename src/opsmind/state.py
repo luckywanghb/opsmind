@@ -167,6 +167,13 @@ class ResolutionStatus(StrEnum):
     RESOLVED = "RESOLVED"
 
 
+class ConversationHistoryRole(StrEnum):
+    """Role of a bounded prompt-visible historical conversation turn."""
+
+    USER = "USER"
+    ASSISTANT = "ASSISTANT"
+
+
 class CapabilityMode(StrEnum):
     """Runtime capability boundary enforced independently of model output."""
 
@@ -193,14 +200,40 @@ class IdentityState(StateModel):
     source_context: FiniteJsonObject = Field(default_factory=dict)
 
 
+class ConversationHistoryItem(StateModel):
+    """Bounded turn projection; persistence keeps the complete turn content."""
+
+    role: ConversationHistoryRole
+    content: str = Field(min_length=1, max_length=2_000)
+
+
 class ConversationState(StateModel):
     """Compact context for the current thread."""
 
     thread_id: str | None = None
     original_query: str | None = None
     current_query: str | None = None
-    summary: str | None = None
+    summary: str | None = Field(default=None, max_length=4_000)
     previous_resolution_status: ResolutionStatus | None = None
+    recent_turns: list[ConversationHistoryItem] = Field(
+        default_factory=list, max_length=6
+    )
+    important_entities: dict[str, str | int | bool] = Field(default_factory=dict)
+    last_assistant_message: str | None = Field(default=None, max_length=2_000)
+
+    @field_validator("important_entities")
+    @classmethod
+    def validate_important_entities(
+        cls, value: dict[str, str | int | bool]
+    ) -> dict[str, str | int | bool]:
+        if len(value) > 20:
+            raise ValueError("conversation contains too many important entities")
+        for key, item in value.items():
+            if not key or len(key) > 256:
+                raise ValueError("conversation entity key is invalid")
+            if isinstance(item, str) and (not item.strip() or len(item) > 512):
+                raise ValueError("conversation entity value is invalid")
+        return value
 
 
 class UnderstandingState(StateModel):

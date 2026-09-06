@@ -1,7 +1,6 @@
 # OpsMind HTTP API
 
-Status: Phase 2 run persistence and backend eval runtime over the Phase 1
-read-only loop
+Status: Phase 3 conversation continuity over the persistent read-only runtime
 
 The API maps one request into the canonical `OpsAgentState`, runs the bounded
 model-driven loop, and returns the terminal outcome plus an actual safe trace.
@@ -142,10 +141,45 @@ Example terminal response shape:
 }
 ```
 
-The API persists each execution, not conversation memory. A repeated
-`thread_id` is a correlation value only; it does not restore or mutate a prior
-run. Retrying creates a new request ID and run ID while retaining the supplied
-thread ID.
+The API persists each execution and its conversation relationship separately.
+A repeated `thread_id` restores a typed checkpoint plus at most six recent
+turns into a fresh Agent state. It never restores the prior run's loop, tool,
+decision, response, or Evidence state. Retrying creates a new request ID and
+run ID while retaining the supplied thread ID.
+
+If a thread is bound to a `user_id`, a later request with a different explicit
+`user_id` fails closed with `409 CONVERSATION_IDENTITY_CONFLICT`. A same-thread
+checkpoint also retains an explicit safe `site_id`; a later different explicit
+`site_id` fails with the same identity-conflict code, while omission restores
+the stored site scope. Identity values are limited to 512 characters; an
+out-of-contract value fails safely and is never truncated. Arbitrary prior
+source-context fields are not restored.
+A same-thread
+concurrent mutation is serialized in-process and protected by repository
+ownership/revision checks; a detected peer conflict returns
+`409 CONVERSATION_CONFLICT`.
+
+Conversation storage failure returns the sanitized
+`503 CONVERSATION_PERSISTENCE_UNAVAILABLE` response. A failed Agent run keeps
+its USER turn for audit, creates no fake ASSISTANT turn, and does not advance
+the checkpoint.
+
+## Conversation records
+
+`GET /api/v1/threads?limit=50` returns newest-first thread metadata. `limit`
+defaults to 50 and is bounded from 1 through 100.
+
+`GET /api/v1/threads/{thread_id}` returns thread metadata, deterministically
+ordered turns with request/run relations, and the current safe checkpoint.
+Unknown IDs return `404 CONVERSATION_NOT_FOUND`.
+
+The conversation schema uses independent `conversation_schema_metadata`
+version 1 plus `conversation_threads`, `conversation_turns`, and
+`conversation_checkpoints` in the configured SQLite file. It stores user
+messages, safe terminal assistant replies, and typed bounded checkpoint fields.
+It excludes prompts, hidden reasoning, provider payloads, raw model/tool
+output, arbitrary source context, exception text, credentials, and full prior
+Agent state.
 
 ## Run records
 
@@ -172,7 +206,7 @@ source context.
 
 ## Evaluation
 
-The backend owns the typed Golden Suite at `evals/golden-v0.1.json`. It contains
+The backend owns the typed Golden Suite at `evals/golden-v0.2.json`. It contains
 the eight V0.1 cases and is loaded and integrity-checked before a job is
 created. The API accepts only a backend-known `suite_id`; callers cannot
 submit arbitrary cases, prompts, provider settings, or evaluator code.
@@ -189,11 +223,11 @@ Start a suite run:
 {"suite_id": "opsmind-golden"}
 ```
 
-Every turn goes through the same execution service as Chat, with a fresh
+Every turn goes through the same conversation-aware execution service as Chat, with a fresh
 request ID and real persisted `AgentRun`. Turns in one case share a generated
-thread ID; separate cases do not. The runner does not restore prior state for
-C12, so that case reports the current conversation-persistence limitation
-honestly.
+thread ID; separate cases do not. C12 now validates real durable restoration,
+continuation understanding, retained work-order identity, and a new current-run
+tool query. Golden v0.1 remains immutable historical input.
 
 The returned job has lifecycle `STARTED`, `COMPLETED`, or `FAILED`; each case
 has quality status `PASS`, `FAIL`, or `ERROR`. A completed job means the suite
@@ -265,7 +299,9 @@ credentials, adapter data, and internal exception text.
 
 ## Explicit limitations
 
-This phase intentionally has no conversation checkpoints/thread resume, Eval UI,
-authentication, RAG, external enterprise integration, write tools, approval
-interrupts, retention automation, or streaming. DeepSeek live evaluation is
-opt-in and is excluded from normal CI.
+This phase intentionally has no LangGraph execution checkpoint/resume,
+chat-history UI, authentication, RAG, external enterprise integration, write
+tools, approval interrupts, retention automation, or streaming. Conversation
+continuity uses the typed application-level checkpoint described above, and
+the existing Eval UI remains available. DeepSeek live evaluation is opt-in and
+is excluded from normal CI.
