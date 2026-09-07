@@ -265,5 +265,13 @@ create a new PM override. Scheduling is user controlled where stated.
 | Delivery Reporter | Luna Max | Max |
 | Escalation Architect | Astra Medium | Medium / conditional: BLOCKER, architecture conflict, repeated MAJOR |
 
+```text
+MODEL_GOVERNANCE_IMMUTABLE
+NO_SILENT_MODEL_FALLBACK
+NO_AGENT_SUPPLIED_PM_OVERRIDE
+NO_AUTOMATIC_PM_AGENT
+```
+
 No silent fallback. No sub-agent PM override. Required != actual => Gate
-INVALID.
+INVALID. If a required model is unavailable, record `ROLE_MODEL_UNAVAILABLE`
+and stop instead of substituting another model.
