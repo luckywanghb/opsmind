@@ -1,9 +1,25 @@
 # TASK-P1-011 — Knowledge / SOP Retrieval Foundation
 
-> PM execution override (2026-09-07): The user explicitly requires Luna Max
-> (`gpt-5.6-luna`, `max`) for every non-Reviewer sub-agent and Astra Low
-> (`gpt-6-astra`, `low`) for the Reviewer. This supersedes Astra Medium
-> requirements and report labels below; all other task requirements remain.
+> Final OpsMind Agent Model Governance is set by PM / User authority and is
+> recorded in `AGENTS.md`. Sub-agents cannot override it or create a new PM
+> override. There is no silent model fallback; required != actual makes a gate
+> invalid.
+
+## Status
+
+`DONE`
+
+- PM Architecture Gate: `APPROVED`
+- Architecture: `ACCEPTED`
+- Merge: `AUTHORIZED`
+- Task state: `DONE`
+- Base: `ac003587d036b22ff43adee69d93e9f43eb90183`
+- Product SHA: `aa278f024cd6e0aa6b5720db732325d3cdf7b153`
+- Tester Evidence HEAD: `bfe73a3d25aba8873773542147fc798cb0ea2c74`
+- Reviewed HEAD: `ef286678d4ddda3def196ccbf07b6e7c321a9300`
+- Pre-finalization Delivery HEAD: `2bdaba3748d8f28816391f80792b926c809fbe8f`
+- Independent Tester: Luna Max / Max — `PASS`, `B0/M0/m0/N0`
+- Reviewer: Astra Low / Low — `APPROVE`, `B0/M0/m1/N0`
 
 ## 0. Task Identity
 
@@ -25,11 +41,15 @@ Task Type:
 
 PM Architecture Gate:
 
-`REQUIRED`
+`APPROVED`
+
+Architecture:
+
+`ACCEPTED`
 
 Merge:
 
-`PROHIBITED until PM approval`
+`AUTHORIZED`
 
 Suggested branch:
 
@@ -45,34 +65,23 @@ Required ADR:
 
 ---
 
-# 1. Governance Update
+# 1. Governance Baseline
 
-从 TASK-P1-011 开始，多 Agent Reviewer 固定为：
-
-**Astra Medium**
-
-Reviewer Gate：
+TASK-P1-011 uses the FINAL OpsMind Agent Model Governance recorded in
+`AGENTS.md`. The authoritative mapping is:
 
 ```text
-Astra Medium Reviewer
-Decision: APPROVE / REQUEST_CHANGES / ESCALATE
-BLOCKER:
-MAJOR:
-MINOR:
-NIT:
+PM / Architect       Astra Medium / Medium / user controlled
+Developer            Luna Max / Max
+Independent Tester   Luna Max / Max
+Reviewer             Astra Low / Low
+Delivery Reporter    Luna Max / Max
+Escalation Architect Astra Medium / Medium / conditional
 ```
 
-不得用其他 Reviewer 模型静默替代 Astra Medium。
-
-如果 Astra Medium 在执行环境中不可用：
-
-```text
-REVIEWER_MODEL_UNAVAILABLE
-```
-
-停止并返回 PM。
-
-历史任务报告不需要为了模型名称做回溯修改。
+This mapping comes from PM / User authority. No silent fallback and no
+sub-agent PM override are permitted. Historical reports remain historical
+evidence and are not rewritten.
 
 ---
 
@@ -1482,11 +1491,9 @@ ADR-006 至少说明：
 ADR Status：
 
 ```text
-Implemented for TASK-P1-011.
-PM Architecture Gate pending.
+Accepted.
+TASK-P1-011 passed the PM Architecture Gate.
 ```
-
-不要提前写 Accepted。
 
 ---
 

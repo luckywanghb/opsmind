@@ -2,7 +2,9 @@
 
 ## Status
 
-Implemented for TASK-P1-011. PM Architecture Gate pending.
+Accepted.
+
+TASK-P1-011 passed the PM Architecture Gate.
 
 ## Context
 
@@ -159,3 +161,16 @@ document ACLs beyond the current system filter; those are known scope limits.
 The corpus is synthetic, local, and loaded at runtime construction. DeepSeek
 live evaluation remains opt-in and is reported separately from deterministic
 mock/integration validation.
+
+## Accepted limitations
+
+- Retrieval is lexical only.
+- The corpus is synthetic and local.
+- Retrieval returns one primary chunk.
+- No semantic reranker or vector database is included.
+- No external enterprise connector is included.
+- No knowledge administration API or UI is included.
+- No enterprise document ACL is provided.
+- DeepSeek live quality was not executed (`LIVE_EVAL_NOT_RUN`).
+- The explicit-offset ISO `updated_at` validation limitation is retained as
+  technical debt; shipped corpus metadata uses date-only values.
