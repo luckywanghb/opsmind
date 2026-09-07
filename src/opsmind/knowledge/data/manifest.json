@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "corpus_id": "opsmind-synthetic",
+  "corpus_version": "1.0.0",
+  "documents": [
+    {
+      "document_id": "K001",
+      "title": "EquipFlow 故障工单关闭 SOP",
+      "system_id": "EquipFlow",
+      "document_type": "SOP",
+      "version": "1.0",
+      "updated_at": "2026-09-07",
+      "status": "ACTIVE",
+      "source_file": "K001.md",
+      "tags": [
+        "EquipFlow",
+        "synthetic"
+      ]
+    },
+    {
+      "document_id": "K002",
+      "title": "EquipFlow 设备台账导出 SOP",
+      "system_id": "EquipFlow",
+      "document_type": "SOP",
+      "version": "1.0",
+      "updated_at": "2026-09-07",
+      "status": "ACTIVE",
+      "source_file": "K002.md",
+      "tags": [
+        "EquipFlow",
+        "synthetic"
+      ]
+    },
+    {
+      "document_id": "K003",
+      "title": "EquipFlow 权限申请流程",
+      "system_id": "EquipFlow",
+      "document_type": "SOP",
+      "version": "1.0",
+      "updated_at": "2026-09-07",
+      "status": "ACTIVE",
+      "source_file": "K003.md",
+      "tags": [
+        "EquipFlow",
+        "synthetic"
+      ]
+    },
+    {
+      "document_id": "K004",
+      "title": "QualityHub 检验报告导出 SOP",
+      "system_id": "QualityHub",
+      "document_type": "SOP",
+      "version": "1.0",
+      "updated_at": "2026-09-07",
+      "status": "ACTIVE",
+      "source_file": "K004.md",
+      "tags": [
+        "QualityHub",
+        "synthetic"
+      ]
+    }
+  ]
+}

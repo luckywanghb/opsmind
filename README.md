@@ -35,23 +35,25 @@ safety boundaries.
 - Minimal Agent kernel and DeepSeek provider integration: complete
 - HTTP runtime: `GET /api/v1/health` and `POST /api/v1/chat`
 - Run persistence: validated runs are queryable via `GET /api/v1/runs` and
-  `GET /api/v1/runs/{run_id}`; conversation checkpoints/restoration are not
-  supported
-- Backend evaluation: the versioned V0.1 Golden Suite is runnable through
+  `GET /api/v1/runs/{run_id}`; typed conversation checkpoints/restoration are
+  supported through repeated thread IDs
+- Backend evaluation: the versioned V0.3 Golden Suite is runnable through
   `POST /api/v1/evals/run` and queryable via `GET /api/v1/evals`
 - Phase 2 Evaluation & Observability: complete — TASK-P1-008 backend Eval
   Runtime and TASK-P1-009 real Eval UI delivered and PM-approved
-- Runtime capability: `READ_ONLY` (three synthetic typed query tools)
+- Runtime capability: `READ_ONLY` (three synthetic live-data query tools plus
+  versioned local lexical `knowledge_search`)
 - GitHub Issues and Pull Requests: development control plane
 - Delivery Reporter: required at meaningful task transitions
 
 The current implementation provides the validated V0.1 `OpsAgentState`, a
 provider-neutral Model Gateway, a bounded model-driven LangGraph loop, typed
-synthetic work-order/permission/incident queries, a typed FastAPI surface, and
-versioned persistence for validated Agent runs plus a backend-owned deterministic
-Golden Suite and eval runtime. Persistence is an audit record only: it does not
-provide conversation checkpoints, restoration, or memory. RAG,
-authentication, write actions, and an Eval UI remain intentionally absent.
+synthetic work-order/permission/incident queries, a versioned local knowledge
+corpus with deterministic lexical retrieval, a typed FastAPI surface, and
+versioned persistence for validated Agent runs plus a backend-owned
+deterministic Golden Suite and eval runtime. The knowledge capability is a
+bounded SOP/FAQ lookup; a general semantic RAG platform, external enterprise
+knowledge connector, knowledge admin UI, and `log_search` remain absent.
 D01–D03 are fixtures; the graph has no case-specific routing.
 
 ## Development

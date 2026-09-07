@@ -1,6 +1,6 @@
-# OpsMind Architecture — V0.1
+# OpsMind Architecture — V0.1 + TASK-P1-011
 
-Status: TASK-P1-007 and TASK-P1-008 architectures accepted — PM gates approved 2026-09-06
+Status: TASK-P1-007 and TASK-P1-008 architectures accepted — PM gates approved 2026-09-06; TASK-P1-011 Product implementation pending PM Architecture Gate
 Architecture style: Model-first Agent + deterministic harness  
 Primary Agent runtime: LangGraph  
 Business environment: Fully synthetic manufacturing IT environment
@@ -305,7 +305,7 @@ Large tool outputs are stored outside the reasoning state.
 
 Examples:
 - log result sets;
-- long RAG passages;
+- selected versioned knowledge chunks;
 - large JSON responses;
 - screenshots;
 - diagnostic dumps.
@@ -322,20 +322,22 @@ Tool raw result
        Agent State
 ```
 
-This reduces context growth and allows later evidence inspection.
+This reduces context growth and allows later evidence inspection. The
+knowledge runtime never places the full corpus or unselected chunks into
+Agent state.
 
 ---
 
 # 8. Tool architecture
 
-TASK-P1-006 implements only these synthetic V0.1 read-only capabilities:
+The current registry implements these typed V0.1 read-only capabilities:
 
 - `work_order_query`
 - `permission_query`
 - `incident_query`
+- `knowledge_search`
 
-`knowledge_search` and `log_search` remain future capabilities and are not
-registered by this task.
+`log_search` remains a future capability and is not registered.
 
 Every tool has a typed contract:
 
@@ -355,7 +357,30 @@ retry_policy
 side_effect
 ```
 
-V0.1 tools are READ-only.
+All current tools are READ-only. `knowledge_search` is backed by the
+TASK-P1-011 local Knowledge Runtime:
+
+```text
+versioned manifest + Markdown corpus
+  → LocalKnowledgeRepository
+    → deterministic cleaning/chunking
+      → LexicalKnowledgeSearchService
+        → knowledge_search RegisteredTool
+```
+
+The repository exposes validated ACTIVE documents and deterministic 1,000
+character chunks with a 200 character overlap. The lexical service normalizes
+case and Unicode, supports identifier/English tokens and Chinese bigrams,
+applies an explainable BM25-style score, and breaks ties by document and chunk
+identity. An optional `system_id` is an exact scope filter. The tool returns
+one best chunk or typed `not_found`, with only stable `document_id`, `chunk_id`,
+title, section, system, document type, version, update date, and excerpt
+fields. Manifest `source_file` values remain repository-only.
+
+This is bounded lexical knowledge retrieval for stable SOP/FAQ content. It is
+not a general semantic RAG platform, an external enterprise knowledge
+connector, a document administration surface, or a substitute for live
+permission, work-order, incident, or log capabilities.
 
 The model chooses the tool.
 
@@ -449,8 +474,9 @@ The model should receive action history and current evidence so that it can reas
 
 The current in-memory graph enforces the limits in `LoopState`, takes the
 minimum of the state and per-tool timeout, and rejects a repeated successful
-tool signature within one run.  It does not persist checkpoints or resume a
-thread.
+tool signature within one run. It does not persist LangGraph checkpoints or
+resume a graph thread; the application conversation service can build a fresh
+run from a bounded typed checkpoint.
 
 The harness enforces limits; the model performs the business judgment.
 
@@ -464,7 +490,7 @@ remain deliberately separate:
 ```text
 request_id = HTTP correlation
 run_id     = one Agent execution record
-thread_id  = conversation correlation (not restoration)
+thread_id  = conversation correlation (application restoration)
 ```
 
 The persistence boundary is outside the Agent graph:
@@ -524,8 +550,8 @@ original query, safe site scope, resolution state, task fields, confirmed facts,
 questions, deterministic understanding summary, scalar important entities,
 last safe assistant reply, and latest run identity. Full turns remain durable,
 but prompt restoration is bounded. Raw tool results and historical Evidence
-are not restored; P1-006 response planning can reference only current-run
-canonical Evidence.
+are not restored; response planning can reference only current-run canonical
+Evidence, including a newly executed knowledge search on a follow-up turn.
 
 At capacity, unresolved questions favor the most recent unique blockers.
 Structured identifier entities use a deterministic total order, and an
@@ -578,11 +604,18 @@ The Agent Kernel is considered viable only when it reliably handles:
 - C09 HTTP 500;
 - C10 site-wide outage;
 - C11 privileged change request;
-- C12 continued unresolved conversation.
+- C12 continued unresolved conversation;
+- C13 generic equipment-ledger operation guidance through `knowledge_search`.
 
 Do not hardcode these cases.  D01–D03 from Issue #16 and the existing Golden
-Cases are eval fixtures, not runtime branches.  The model selects tools from
-the registry for any supported input; unknown records are typed `not_found`.
+Cases are eval fixtures, not runtime branches. The model selects tools from
+the registry for any supported input; unknown knowledge queries are typed
+`not_found` and do not trigger a query-specific fallback.
+
+The backend-owned Golden Suite is version `0.3`. Its C01 and C13 cases use the
+same registered knowledge runtime as Chat, while C03, C05, C10 and C12 retain
+their permission, work-order, incident, and conversation behavior. C09 keeps
+the explicit `LOG_SEARCH_NOT_IMPLEMENTED` known gap.
 
 ---
 
@@ -610,7 +643,7 @@ At minimum:
 
 # 17. Future architecture
 
-Not part of V0.1:
+Not part of the current scope:
 
 ### V0.2
 - write actions;
@@ -619,6 +652,8 @@ Not part of V0.1:
 - approval console.
 
 ### Later
+- an embedding/vector backend behind the unchanged `KnowledgeRepository` and
+  `knowledge_search` contract, after an architecture gate;
 - additional Agent domains;
 - Agent Registry;
 - Agent-as-tool patterns;

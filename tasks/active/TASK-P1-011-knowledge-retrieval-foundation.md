@@ -1,5 +1,10 @@
 # TASK-P1-011 — Knowledge / SOP Retrieval Foundation
 
+> PM execution override (2026-09-07): The user explicitly requires Luna Max
+> (`gpt-5.6-luna`, `max`) for every non-Reviewer sub-agent and Astra Low
+> (`gpt-6-astra`, `low`) for the Reviewer. This supersedes Astra Medium
+> requirements and report labels below; all other task requirements remain.
+
 ## 0. Task Identity
 
 Repository:

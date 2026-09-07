@@ -38,7 +38,7 @@ def test_backend_golden_suite_is_typed_versioned_and_deterministic() -> None:
     second = loader.load()
 
     assert first.suite_id == "opsmind-golden"
-    assert first.suite_version == "0.2"
+    assert first.suite_version == "0.3"
     assert [case.case_id for case in first.cases] == [
         "C01",
         "C03",
@@ -48,6 +48,7 @@ def test_backend_golden_suite_is_typed_versioned_and_deterministic() -> None:
         "C10",
         "C11",
         "C12",
+        "C13",
     ]
     assert first.model_dump_json() == second.model_dump_json()
 

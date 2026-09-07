@@ -1,5 +1,10 @@
 """Typed, read-only tool capabilities for the OpsMind Agent runtime."""
 
+from opsmind.knowledge.tool import (
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
+    knowledge_registration,
+)
 from opsmind.tools.contracts import (
     IncidentQueryRequest,
     IncidentQueryResponse,
@@ -43,6 +48,8 @@ __all__ = [
     "INCIDENT_QUERY_NAME",
     "IncidentQueryRequest",
     "IncidentQueryResponse",
+    "KnowledgeSearchRequest",
+    "KnowledgeSearchResponse",
     "PERMISSION_QUERY_NAME",
     "PermissionQueryRequest",
     "PermissionQueryResponse",
@@ -70,6 +77,7 @@ __all__ = [
     "WorkOrderQueryResponse",
     "build_default_tool_registry",
     "incident_query",
+    "knowledge_registration",
     "permission_query",
     "work_order_query",
 ]

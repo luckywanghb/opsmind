@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from opsmind.evals.models import EvalSuite, _validate_json_depth
 
-DEFAULT_SUITE_PATH = Path(__file__).resolve().parents[3] / "evals" / "golden-v0.2.json"
+DEFAULT_SUITE_PATH = Path(__file__).resolve().parents[3] / "evals" / "golden-v0.3.json"
 MAX_SUITE_FILE_BYTES = 512 * 1_024
 
 

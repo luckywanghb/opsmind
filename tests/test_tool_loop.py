@@ -156,6 +156,7 @@ def test_default_registry_exposes_only_typed_read_only_tools() -> None:
         "work_order_query",
         "permission_query",
         "incident_query",
+        "knowledge_search",
     )
     descriptions = registry.describe()
     assert [item["name"] for item in descriptions] == list(registry.names)
@@ -386,6 +387,7 @@ def test_latest_review_capabilities_and_source_fields_reach_later_contexts() -> 
         "work_order_query",
         "permission_query",
         "incident_query",
+        "knowledge_search",
     ]
     assert all(
         item["mode"] == "READ_ONLY"

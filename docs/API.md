@@ -1,6 +1,6 @@
 # OpsMind HTTP API
 
-Status: Phase 3 conversation continuity over the persistent read-only runtime
+Status: Phase 3 conversation continuity and bounded knowledge retrieval over the persistent read-only runtime
 
 The API maps one request into the canonical `OpsAgentState`, runs the bounded
 model-driven loop, and returns the terminal outcome plus an actual safe trace.
@@ -88,6 +88,13 @@ Successful responses include:
   steps with deterministic action/status summaries. The `decision.goal` and
   `decision.rationale` fields remain typed control-plane diagnostics; they are
   not evidence and are not used to render the final reply.
+
+The default registry exposes `work_order_query`, `permission_query`,
+`incident_query`, and the read-only `knowledge_search` capability. The latter
+searches the versioned local SOP corpus and returns at most one best matching
+chunk. A knowledge evidence item contains stable document/chunk provenance and
+the selected excerpt; it never contains the manifest source path or unselected
+document content.
 
 Example terminal response shape:
 
@@ -206,9 +213,11 @@ source context.
 
 ## Evaluation
 
-The backend owns the typed Golden Suite at `evals/golden-v0.2.json`. It contains
-the eight V0.1 cases and is loaded and integrity-checked before a job is
-created. The API accepts only a backend-known `suite_id`; callers cannot
+The backend owns the typed Golden Suite at `evals/golden-v0.3.json`. It
+contains the eight inherited cases plus C13 and is loaded and integrity-checked
+before a job is created. C01 and C13 exercise the real registered
+`knowledge_search` runtime; C09 remains the `LOG_SEARCH_NOT_IMPLEMENTED` known
+gap. The API accepts only a backend-known `suite_id`; callers cannot
 submit arbitrary cases, prompts, provider settings, or evaluator code.
 
 ```text
@@ -243,17 +252,22 @@ credentials, or arbitrary source context.
 
 ## Tool and safety boundary
 
-The current registry contains three synthetic typed read-only tools:
+The current registry contains four typed read-only tools:
 
 - `work_order_query` — status, approval node, handler, wait duration, anomaly;
 - `permission_query` — roles, permissions, and missing permission facts;
 - `incident_query` — incident ID, status, scope, and impact.
+- `knowledge_search` — one best versioned SOP/FAQ chunk, stable provenance,
+  optional exact `system_id` scope, and typed `not_found`.
 
 The model chooses from registered descriptions and schemas.  The harness
 validates the call, applies `READ_ONLY`, enforces timeout/retry/round/tool-call
 limits, executes the adapter, and keeps only compact reviewed evidence in
-state.  Unknown records return typed `not_found`; unknown tools, malformed
-arguments, and write-mode calls do not execute.
+state. Knowledge requests are bounded to a 512-character query and a
+128-character system scope. Unknown records return typed `not_found`; unknown
+tools, malformed arguments, and write-mode calls do not execute. The local
+knowledge repository accepts only validated ACTIVE documents and keeps
+manifest source paths inside its storage boundary.
 
 ## Trace safety
 
@@ -300,8 +314,10 @@ credentials, adapter data, and internal exception text.
 ## Explicit limitations
 
 This phase intentionally has no LangGraph execution checkpoint/resume,
-chat-history UI, authentication, RAG, external enterprise integration, write
-tools, approval interrupts, retention automation, or streaming. Conversation
-continuity uses the typed application-level checkpoint described above, and
-the existing Eval UI remains available. DeepSeek live evaluation is opt-in and
-is excluded from normal CI.
+chat-history UI, authentication, general semantic RAG platform, external
+enterprise knowledge connector, knowledge administration API, write tools,
+approval interrupts, retention automation, or streaming. It does include the
+bounded local lexical `knowledge_search` runtime described above. Conversation
+continuity uses the typed application-level checkpoint, and the existing Eval
+UI remains available. DeepSeek live evaluation is opt-in and is excluded from
+normal CI.

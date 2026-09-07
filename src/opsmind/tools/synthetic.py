@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from opsmind.knowledge.tool import knowledge_registration
 from opsmind.tools.contracts import (
     IncidentQueryRequest,
     IncidentQueryResponse,
@@ -353,7 +354,7 @@ class SyntheticToolAdapters:
     incident_query: ToolHandler = incident_query
 
     def registry(self) -> ToolRegistry:
-        """Build a fresh registry containing only the three V0.1 tools."""
+        """Build a fresh registry containing the read-only data and knowledge tools."""
 
         return ToolRegistry(
             [
@@ -387,6 +388,7 @@ class SyntheticToolAdapters:
                     handler=self.incident_query,
                     field_presentations=_INCIDENT_PRESENTATION,
                 ),
+                knowledge_registration(),
             ]
         )
 

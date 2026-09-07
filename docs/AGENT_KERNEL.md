@@ -44,6 +44,13 @@ then returns a validated `ToolState` selection.  The registry checks the name
 and concrete request schema.  `execute_tool` enforces `READ_ONLY`, a bounded
 timeout, duplicate-call protection, and normalized typed output.
 
+The default registry includes `knowledge_search` alongside the three synthetic
+live-data query adapters. `knowledge_search` reads only ACTIVE documents from
+the versioned local corpus, performs deterministic lexical ranking, and returns
+one bounded chunk with stable document, section, version, and update-date
+provenance. It is a stable SOP/FAQ capability; current permissions, work-order
+status, incidents, and logs remain separate capabilities.
+
 `review_tool_result` calls `TOOL_RESULT_REVIEW` and projects a compact summary,
 confirmed facts, unresolved questions, and an evidence item.  The next action
 is selected by a fresh `decide_action` model call; review recommendations are
@@ -119,7 +126,8 @@ checkpoint or restore previous loop/tool/decision/evidence state. Historical
 conversation can guide understanding and planning but never enters current-run
 Evidence or the grounded renderer.
 
-The runtime intentionally adds no RAG, external enterprise integration, write
-actions, approval interrupts, authentication platform, long-term user memory,
-LLM summarizer, or streaming. The three synthetic adapters remain generic
-registry fixtures.
+The runtime intentionally adds no general semantic RAG platform, external
+enterprise integration, knowledge administration API, write actions, approval
+interrupts, authentication platform, long-term user memory, LLM summarizer, or
+streaming. The local knowledge corpus and the four read-only adapters remain
+bounded registry capabilities; `log_search` is still unavailable.
