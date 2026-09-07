@@ -160,6 +160,7 @@ _DEFAULT_EVALUATOR_MATRIX = [
     ("request_type_in", ["DIAGNOSE"], ["HOW_TO"], False),
     ("risk_signal_in", ["NONE"], ["BROAD_OUTAGE"], False),
     ("final_action_in", ["SEARCH"], ["REPLY"], False),
+    ("action_occurred", ["SEARCH"], ["REPLY"], False),
     ("terminal_status_in", ["RESOLVED"], ["WAITING_USER"], False),
     ("required_tool_used", ["work_order_query"], ["permission_query"], False),
     (

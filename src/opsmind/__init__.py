@@ -127,6 +127,8 @@ from opsmind.tools import (
     WORK_ORDER_QUERY_NAME,
     IncidentQueryRequest,
     IncidentQueryResponse,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
     PermissionQueryRequest,
     PermissionQueryResponse,
     RegisteredTool,
@@ -150,6 +152,7 @@ from opsmind.tools import (
     WorkOrderQueryRequest,
     WorkOrderQueryResponse,
     build_default_tool_registry,
+    knowledge_registration,
 )
 
 __all__ = [
@@ -248,6 +251,8 @@ __all__ = [
     "INCIDENT_QUERY_NAME",
     "IncidentQueryRequest",
     "IncidentQueryResponse",
+    "KnowledgeSearchRequest",
+    "KnowledgeSearchResponse",
     "PERMISSION_QUERY_NAME",
     "PermissionQueryRequest",
     "PermissionQueryResponse",
@@ -273,6 +278,7 @@ __all__ = [
     "WorkOrderQueryRequest",
     "WorkOrderQueryResponse",
     "build_default_tool_registry",
+    "knowledge_registration",
     "MockInvocation",
     "MockModelProvider",
     "MockResponseQueueExhaustedError",

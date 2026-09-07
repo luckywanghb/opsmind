@@ -88,9 +88,7 @@ def _json_values_equal(actual: object, expected: object) -> bool:
     if isinstance(actual, dict):
         if not isinstance(expected, dict) or actual.keys() != expected.keys():
             return False
-        return all(
-            _json_values_equal(actual[key], expected[key]) for key in actual
-        )
+        return all(_json_values_equal(actual[key], expected[key]) for key in actual)
     if isinstance(actual, list):
         if not isinstance(expected, list) or len(actual) != len(expected):
             return False
@@ -242,6 +240,23 @@ def _risk_signal_in(
             _enum_value(item.understanding.risk_signal)
             for item in _targets(assertion, context)
         ),
+    )
+
+
+def _action_occurred(
+    assertion: EvalAssertion,
+    context: CaseEvaluationContext,
+) -> EvalAssertionResult:
+    targets = _targets(assertion, context)
+    expected = _expected_list(assertion)
+    if not targets or not expected:
+        return _error(assertion, "assertion expectation or observation is invalid")
+    actions = [action.value for target in targets for action in target.action_sequence]
+    return _result(
+        assertion,
+        all(action in actions for action in expected),
+        actual=actions,
+        message="required action occurrence inspected",
     )
 
 
@@ -586,6 +601,7 @@ class EvaluatorRegistry:
         "request_type_in": _request_type_in,
         "risk_signal_in": _risk_signal_in,
         "final_action_in": _final_action_in,
+        "action_occurred": _action_occurred,
         "terminal_status_in": _terminal_status_in,
         "required_tool_used": _required_tool_used,
         "forbidden_tool_not_used": _forbidden_tool_not_used,
@@ -610,6 +626,7 @@ class EvaluatorRegistry:
         "request_type_in": RequestType,
         "risk_signal_in": RiskSignal,
         "final_action_in": AgentAction,
+        "action_occurred": AgentAction,
         "terminal_status_in": TaskStatus,
     }
 
@@ -644,9 +661,11 @@ class EvaluatorRegistry:
         expected = assertion.expected
         if assertion.type in self._enum_expectations:
             enum_type = self._enum_expectations[assertion.type]
-            expected_strings = [
-                item for item in expected if isinstance(item, str)
-            ] if isinstance(expected, list) else []
+            expected_strings = (
+                [item for item in expected if isinstance(item, str)]
+                if isinstance(expected, list)
+                else []
+            )
             allowed_values = {member.value for member in enum_type}
             if (
                 not isinstance(expected, list)

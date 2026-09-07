@@ -147,7 +147,7 @@ Development uses artifact-driven multi-Agent collaboration.
 Roles:
 - PM / Architect
 - Developer
-- Tester
+- Independent Tester
 - Reviewer
 - Delivery Reporter
 - Escalation Architect
@@ -248,3 +248,22 @@ Avoid:
 ## 10. GitHub reporting
 
 GitHub Issues and Pull Requests are the development control plane. Read `docs/REPORTING.md`. Coding-session transcripts are not authoritative project state. The Delivery Reporter normalizes task state and validation evidence for PM consumption.
+
+---
+
+## 11. OpsMind Agent Model Governance — FINAL
+
+This baseline is set by PM / User authority. Sub-agents cannot override it or
+create a new PM override. Scheduling is user controlled where stated.
+
+| Role | Required model | Reasoning / trigger |
+| --- | --- | --- |
+| PM / Architect | Astra Medium | Medium / user controlled |
+| Developer | Luna Max | Max |
+| Independent Tester | Luna Max | Max |
+| Reviewer | Astra Low | Low |
+| Delivery Reporter | Luna Max | Max |
+| Escalation Architect | Astra Medium | Medium / conditional: BLOCKER, architecture conflict, repeated MAJOR |
+
+No silent fallback. No sub-agent PM override. Required != actual => Gate
+INVALID.
